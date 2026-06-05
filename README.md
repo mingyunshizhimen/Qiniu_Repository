@@ -34,6 +34,7 @@
 ## 环境要求
 
 - Python 3.12+
+- Node.js 24 LTS（前端）
 
 ## 本地启动
 
@@ -53,6 +54,29 @@ python -m uvicorn backend.app.main:app --reload
 需要启用百炼服务时，在本地 `.env` 中填写 `DASHSCOPE_API_KEY`。请勿提交真实密钥。
 
 当前阶段已完成 DashScope 实时 ASR Provider 与实时会话协议的音频管线集成。
+
+## 前端演示
+
+前端使用 React、TypeScript 和 Vite，当前提供产品首页及 Mock 同传工作台。Mock 模式不请求麦克风权限，也不调用后端服务，用于独立演示页面状态和临时/确认字幕效果。
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+启动后访问 <http://127.0.0.1:5173>。页面路由：
+
+- `/`：产品首页与快速同传入口。
+- `/interpreter`：Mock 同传工作台。
+
+构建与前端测试：
+
+```powershell
+cd frontend
+npm run test
+npm run build
+```
 
 ## 实时协议
 
@@ -147,6 +171,8 @@ backend/
     core/       # 配置与基础设施
     realtime/   # 会话状态机、ASR 管线与实时事件模型
     main.py     # FastAPI 应用入口
+frontend/
+  src/          # React 页面、Mock 字幕事件与交互测试
 docs/
   superpowers/
     specs/      # 架构设计
@@ -161,6 +187,9 @@ tests/          # 自动化测试
 - [HTTPX](https://www.python-httpx.org/)：FastAPI 测试客户端依赖。
 - [websockets](https://websockets.readthedocs.io/)：DashScope 实时 ASR WebSocket 客户端。
 - [pytest](https://docs.pytest.org/)：自动化测试框架。
+- [React](https://react.dev/)：演示页面组件与交互状态。
+- [Vite](https://vite.dev/)：前端开发服务器与构建工具。
+- [Vitest](https://vitest.dev/)：前端组件和交互测试。
 
 完整版本约束见 [`pyproject.toml`](pyproject.toml)。
 
