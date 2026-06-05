@@ -23,24 +23,10 @@ class RealtimeSession:
         self._outbound_sequence = 0
 
     def handle(self, command: ClientCommand) -> list[ServerEvent]:
-        trace_id = str(uuid4())
-        if command.sequence <= self._last_inbound_sequence:
-            return [
-                self._event(
-                    event_type="error",
-                    trace_id=trace_id,
-                    payload={
-                        "code": "invalid_sequence",
-                        "received": command.sequence,
-                        "last_received": self._last_inbound_sequence,
-                        "message": (
-                            "Command sequence must increase monotonically."
-                        ),
-                    },
-                )
-            ]
+        trace_id, error = self.accept_command(command)
+        if error is not None:
+            return [error]
 
-        self._last_inbound_sequence = command.sequence
         if command.type == "text.submit":
             return self._handle_text_submit(command, trace_id)
 
@@ -56,6 +42,45 @@ class RealtimeSession:
                 payload={"state": self.state},
             )
         ]
+
+    def accept_audio_command(
+        self,
+        command: ClientCommand,
+    ) -> tuple[str, ServerEvent | None]:
+        trace_id, error = self.accept_command(command)
+        if error is not None:
+            return trace_id, error
+        if self.state != "active":
+            return trace_id, self._invalid_transition(command.type, trace_id)
+        return trace_id, None
+
+    def accept_command(
+        self,
+        command: ClientCommand,
+    ) -> tuple[str, ServerEvent | None]:
+        trace_id = str(uuid4())
+        if command.sequence <= self._last_inbound_sequence:
+            return trace_id, self._event(
+                event_type="error",
+                trace_id=trace_id,
+                payload={
+                    "code": "invalid_sequence",
+                    "received": command.sequence,
+                    "last_received": self._last_inbound_sequence,
+                    "message": "Command sequence must increase monotonically.",
+                },
+            )
+
+        self._last_inbound_sequence = command.sequence
+        return trace_id, None
+
+    def event(
+        self,
+        event_type: str,
+        trace_id: str,
+        payload: dict[str, Any],
+    ) -> ServerEvent:
+        return self._event(event_type, trace_id, payload)
 
     def protocol_error(self, message: str) -> ServerEvent:
         return self._event(

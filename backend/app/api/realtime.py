@@ -1,16 +1,31 @@
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 
+from backend.app.core.config import Settings, get_settings
+from backend.app.providers.asr import get_asr_provider
+from backend.app.providers.base import ASRProvider
 from backend.app.realtime.models import ClientCommand
+from backend.app.realtime.pipeline import RealtimeASRPipeline
 from backend.app.realtime.session import RealtimeSession
 
 router = APIRouter(tags=["realtime"])
 
 
+def get_realtime_asr_provider(
+    settings: Settings = Depends(get_settings),
+) -> ASRProvider:
+    return get_asr_provider(settings)
+
+
 @router.websocket("/ws/sessions/{session_id}")
-async def realtime_session(websocket: WebSocket, session_id: str) -> None:
+async def realtime_session(
+    websocket: WebSocket,
+    session_id: str,
+    provider: ASRProvider = Depends(get_realtime_asr_provider),
+) -> None:
     await websocket.accept()
     session = RealtimeSession(session_id)
+    pipeline = RealtimeASRPipeline(session, provider)
 
     try:
         while True:
@@ -24,7 +39,9 @@ async def realtime_session(websocket: WebSocket, session_id: str) -> None:
                 await websocket.send_json(event.model_dump(mode="json"))
                 continue
 
-            for event in session.handle(command):
+            for event in await pipeline.handle(command):
                 await websocket.send_json(event.model_dump(mode="json"))
     except WebSocketDisconnect:
         return
+    finally:
+        await pipeline.close()
