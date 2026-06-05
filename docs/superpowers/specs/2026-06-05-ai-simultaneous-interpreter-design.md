@@ -88,7 +88,7 @@ FastAPI Application
           └─ SQLite
 ```
 
-前端使用 React、TypeScript 和 Vite。后端使用 FastAPI、WebSocket、SQLAlchemy 与 SQLite。前后端通过版本化事件协议通信。
+前端使用 React、TypeScript 和 Vite。后端使用 Python 3.12、FastAPI、WebSocket、SQLAlchemy 与 SQLite。前后端通过版本化事件协议通信。
 
 ## 6. 可扩展边界
 
@@ -174,4 +174,3 @@ FastAPI Application
 7. 可靠性、测试、Docker、README 与 Demo 材料。
 
 每个 PR 只实现一个可独立验证的目标，描述功能、实现思路和测试方式；合并后主分支始终可运行。依赖及原创范围在 README 中明确列出。
-
