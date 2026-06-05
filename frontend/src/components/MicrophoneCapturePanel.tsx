@@ -1,41 +1,65 @@
-import { useMicrophoneCapture } from "../audio/useMicrophoneCapture";
+import type { MicrophoneCaptureState } from "../audio/useMicrophoneCapture";
+import type { RealtimeASRStatus } from "../realtime/useRealtimeASR";
 
-const statusLabels = {
+interface MicrophoneCapturePanelProps {
+  microphone: MicrophoneCaptureState;
+  realtimeStatus: RealtimeASRStatus;
+  realtimeError: string | null;
+  onStart: () => Promise<void>;
+  onStop: () => Promise<void>;
+}
+
+const realtimeStatusLabels: Record<RealtimeASRStatus, string> = {
   idle: "Idle",
-  requesting: "Requesting",
-  capturing: "Capturing",
-  stopped: "Stopped",
-  unsupported: "Unsupported",
+  connecting: "Connecting",
+  running: "Capturing",
+  stopping: "Stopping",
+  ended: "Stopped",
   error: "Error",
-} as const;
+};
 
-export function MicrophoneCapturePanel() {
-  const microphone = useMicrophoneCapture();
+export function MicrophoneCapturePanel({
+  microphone,
+  realtimeStatus,
+  realtimeError,
+  onStart,
+  onStop,
+}: MicrophoneCapturePanelProps) {
+  const realtimeActive =
+    realtimeStatus === "connecting" ||
+    realtimeStatus === "running" ||
+    realtimeStatus === "stopping";
   const actionLabel =
-    microphone.status === "capturing"
-      ? "Stop capture"
-      : microphone.status === "stopped"
-        ? "Retry microphone"
-        : "Enable microphone";
-
+    realtimeStatus === "running"
+      ? "Stop realtime ASR"
+      : realtimeStatus === "ended" || realtimeStatus === "error"
+        ? "Restart realtime ASR"
+        : "Start realtime ASR";
+  const statusClass =
+    realtimeStatus === "running"
+      ? "capturing"
+      : realtimeStatus === "connecting" || realtimeStatus === "stopping"
+        ? "requesting"
+        : realtimeStatus;
   const progressWidth = `${Math.max(8, Math.round(microphone.level * 100))}%`;
+  const error = realtimeError ?? microphone.error;
 
   return (
     <section className="microphone-capture-panel" aria-label="browser audio capture">
       <header className="microphone-capture-header">
         <div>
-          <small>05B / BROWSER AUDIO</small>
-          <strong>Microphone Capture</strong>
+          <small>05C / REALTIME ASR</small>
+          <strong>Microphone to Live Transcript</strong>
         </div>
-        <span className={`microphone-status microphone-status-${microphone.status}`}>
+        <span className={`microphone-status microphone-status-${statusClass}`}>
           <i />
-          {statusLabels[microphone.status]}
+          {realtimeStatusLabels[realtimeStatus]}
         </span>
       </header>
 
       <p className="microphone-capture-copy">
-        This stage only captures browser microphone audio and converts it to 16kHz mono PCM
-        frames. It does not send audio to the backend yet.
+        Captures 16kHz mono PCM audio, streams it to the backend over WebSocket,
+        and displays realtime ASR transcripts above.
       </p>
 
       <div className="microphone-meter" aria-hidden="true">
@@ -57,9 +81,9 @@ export function MicrophoneCapturePanel() {
         </div>
       </dl>
 
-      {microphone.error && (
+      {error && (
         <p className="microphone-error" role="alert">
-          {microphone.error}
+          {error}
         </p>
       )}
 
@@ -67,8 +91,13 @@ export function MicrophoneCapturePanel() {
         <button
           className="microphone-action"
           type="button"
+          disabled={
+            realtimeStatus === "connecting" ||
+            realtimeStatus === "stopping" ||
+            microphone.status === "requesting"
+          }
           onClick={() => {
-            void (microphone.status === "capturing" ? microphone.stop() : microphone.start());
+            void (realtimeActive ? onStop() : onStart());
           }}
         >
           {actionLabel}

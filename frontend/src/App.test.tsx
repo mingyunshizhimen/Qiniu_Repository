@@ -5,6 +5,35 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AppRoutes } from "./App";
 
+const { realtimeState } = vi.hoisted(() => ({
+  realtimeState: {
+    status: "idle",
+    segments: [] as Array<{
+      id: string;
+      text: string;
+      status: "partial" | "final";
+    }>,
+    microphone: {
+      status: "idle",
+      supported: true,
+      sampleRate: 16_000,
+      frameCount: 0,
+      level: 0,
+      error: null as string | null,
+      start: async () => {},
+      stop: async () => {},
+    },
+    error: null as string | null,
+    hasStarted: false,
+    start: async () => {},
+    stop: async () => {},
+  },
+}));
+
+vi.mock("./realtime/useRealtimeASR", () => ({
+  useRealtimeASR: () => realtimeState,
+}));
+
 
 function renderApp(initialPath = "/") {
   return render(
@@ -17,6 +46,14 @@ function renderApp(initialPath = "/") {
 
 afterEach(() => {
   vi.useRealTimers();
+  realtimeState.status = "idle";
+  realtimeState.segments = [];
+  realtimeState.error = null;
+  realtimeState.hasStarted = false;
+  realtimeState.microphone.status = "idle";
+  realtimeState.microphone.frameCount = 0;
+  realtimeState.microphone.level = 0;
+  realtimeState.microphone.error = null;
 });
 
 
@@ -62,9 +99,38 @@ describe("mock interpreter workspace", () => {
       screen.getByRole("region", { name: "browser audio capture" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Enable microphone" }),
+      screen.getByRole("button", { name: "Start realtime ASR" }),
     ).toBeEnabled();
     expect(screen.getByText("Idle")).toBeInTheDocument();
+  });
+
+  it("shows realtime ASR transcripts when the live session is active", () => {
+    realtimeState.status = "running";
+    realtimeState.hasStarted = true;
+    realtimeState.segments = [
+      {
+        id: "final-1",
+        text: "这是来自实时语音识别的字幕。",
+        status: "final",
+      },
+    ];
+
+    renderApp("/interpreter");
+
+    expect(screen.getByText("Realtime ASR 模式")).toBeInTheDocument();
+    expect(
+      screen.getByText("这是来自实时语音识别的字幕。"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("等待确认原文后生成译文")).toBeInTheDocument();
+  });
+
+  it("prompts the user to speak while realtime ASR awaits a transcript", () => {
+    realtimeState.status = "running";
+    realtimeState.hasStarted = true;
+
+    renderApp("/interpreter");
+
+    expect(screen.getByText("连接成功，请开始说话")).toBeInTheDocument();
   });
 
   it("starts and progressively shows mock subtitles", () => {

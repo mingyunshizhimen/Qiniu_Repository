@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, Route, Routes } from "react-router-dom";
 
 import { MicrophoneCapturePanel } from "./components/MicrophoneCapturePanel";
+import { useRealtimeASR } from "./realtime/useRealtimeASR";
 
 
 export interface SubtitleSegment {
@@ -272,11 +273,13 @@ function TranscriptPanel({
   language,
   segments,
   translated,
+  emptyMessage,
 }: {
   title: string;
   language: string;
   segments: SubtitleSegment[];
   translated?: boolean;
+  emptyMessage?: string;
 }) {
   return (
     <section className="transcript-panel">
@@ -291,7 +294,12 @@ function TranscriptPanel({
         {segments.length === 0 ? (
           <div className="empty-transcript">
             <span>{translated ? "TR" : "CN"}</span>
-            <p>{translated ? "译文将在这里同步呈现" : "点击开始，查看模拟字幕流"}</p>
+            <p>
+              {emptyMessage ??
+                (translated
+                  ? "译文将在这里同步呈现"
+                  : "点击开始，查看模拟字幕流")}
+            </p>
           </div>
         ) : (
           segments.map((segment) => (
@@ -321,10 +329,30 @@ function TranscriptPanel({
 
 function InterpreterPage() {
   const session = useMockInterpreter();
+  const realtime = useRealtimeASR();
+  const realtimeActive =
+    realtime.status === "connecting" ||
+    realtime.status === "running" ||
+    realtime.status === "stopping";
+  const showRealtime =
+    realtime.hasStarted || realtime.segments.length > 0;
+  const displayedSegments = showRealtime
+    ? realtime.segments.map((segment) => ({
+        id: segment.id,
+        sourceText: segment.text,
+        translatedText: "",
+        status: segment.status,
+      }))
+    : session.segments;
+  const displayedStatus: SessionStatus = realtimeActive
+    ? "running"
+    : realtime.status === "ended" || realtime.status === "error"
+      ? "ended"
+      : session.status;
   const isActive = session.status === "running" || session.status === "paused";
   const elapsed = useMemo(
-    () => (session.segments.length ? "00:12" : "00:00"),
-    [session.segments.length],
+    () => (displayedSegments.length ? "00:12" : "00:00"),
+    [displayedSegments.length],
   );
 
   return (
@@ -343,7 +371,7 @@ function InterpreterPage() {
         </div>
         <div className="demo-badge">
           <i />
-          Mock 演示模式
+          {showRealtime ? "Realtime ASR 模式" : "Mock 演示模式"}
         </div>
       </header>
 
@@ -364,9 +392,9 @@ function InterpreterPage() {
         <div className="session-meta">
           <div>
             <small>会话状态</small>
-            <strong className={`status-${session.status}`}>
+            <strong className={`status-${displayedStatus}`}>
               <i />
-              {statusLabels[session.status]}
+              {statusLabels[displayedStatus]}
             </strong>
           </div>
           <div>
@@ -380,13 +408,19 @@ function InterpreterPage() {
         <TranscriptPanel
           title="SOURCE TRANSCRIPT"
           language="原文字幕"
-          segments={session.segments}
+          segments={displayedSegments}
+          emptyMessage={
+            showRealtime ? "连接成功，请开始说话" : undefined
+          }
         />
         <TranscriptPanel
           title="LIVE TRANSLATION"
           language="译文字幕"
-          segments={session.segments}
+          segments={displayedSegments}
           translated
+          emptyMessage={
+            showRealtime ? "实时翻译将在下一阶段接入" : undefined
+          }
         />
       </section>
 
@@ -397,12 +431,21 @@ function InterpreterPage() {
           </span>
           <div>
             <small>当前数据源</small>
-            <strong>预设事件流 · 无需麦克风权限</strong>
+            <strong>
+              {showRealtime
+                ? "麦克风音频 · WebSocket 实时 ASR"
+                : "预设事件流 · 无需麦克风权限"}
+            </strong>
           </div>
         </div>
         <div className="control-buttons">
           {!isActive && (
-            <button className="start-button" type="button" onClick={session.start}>
+            <button
+              className="start-button"
+              type="button"
+              disabled={realtimeActive}
+              onClick={session.start}
+            >
               <span className="play-symbol" />
               {session.status === "ended" ? "重新开始" : "开始演示"}
             </button>
@@ -428,10 +471,16 @@ function InterpreterPage() {
         </div>
       </section>
 
-      <MicrophoneCapturePanel />
+      <MicrophoneCapturePanel
+        microphone={realtime.microphone}
+        realtimeStatus={realtime.status}
+        realtimeError={realtime.error}
+        onStart={realtime.start}
+        onStop={realtime.stop}
+      />
 
       <p className="workspace-footnote">
-        当前页面使用 Mock 事件演示界面状态，真实麦克风与 WebSocket 将在后续 PR 接入。
+        Realtime ASR 需要后端服务和 DASHSCOPE_API_KEY；Mock 演示仍可独立运行。
       </p>
     </main>
   );

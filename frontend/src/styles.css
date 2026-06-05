@@ -1124,6 +1124,11 @@ button {
   box-shadow: 0 15px 32px rgba(55, 77, 207, 0.22);
 }
 
+.microphone-action:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
 @media (max-width: 640px) {
   .microphone-capture-panel {
     width: min(100% - 32px, 980px);
