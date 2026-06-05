@@ -13,6 +13,11 @@ const { realtimeState } = vi.hoisted(() => ({
       text: string;
       status: "partial" | "final";
     }>,
+    translationSegments: [] as Array<{
+      id: string;
+      text: string;
+      status: "partial" | "final";
+    }>,
     microphone: {
       status: "idle",
       supported: true,
@@ -48,6 +53,7 @@ afterEach(() => {
   vi.useRealTimers();
   realtimeState.status = "idle";
   realtimeState.segments = [];
+  realtimeState.translationSegments = [];
   realtimeState.error = null;
   realtimeState.hasStarted = false;
   realtimeState.microphone.status = "idle";
@@ -79,9 +85,7 @@ describe("landing page", () => {
     const user = userEvent.setup();
     renderApp();
 
-    await user.click(
-      screen.getByRole("link", { name: /进入快速同传/ }),
-    );
+    await user.click(screen.getByRole("link", { name: /进入快速同传/ }));
 
     expect(
       screen.getByRole("heading", { name: "实时同传工作台" }),
@@ -114,14 +118,19 @@ describe("mock interpreter workspace", () => {
         status: "final",
       },
     ];
+    realtimeState.translationSegments = [
+      {
+        id: "final-1",
+        text: "This is a realtime ASR subtitle.",
+        status: "final",
+      },
+    ];
 
     renderApp("/interpreter");
 
     expect(screen.getByText("Realtime ASR 模式")).toBeInTheDocument();
-    expect(
-      screen.getByText("这是来自实时语音识别的字幕。"),
-    ).toBeInTheDocument();
-    expect(screen.getByText("等待确认原文后生成译文")).toBeInTheDocument();
+    expect(screen.getByText("这是来自实时语音识别的字幕。")).toBeInTheDocument();
+    expect(screen.getByText("This is a realtime ASR subtitle.")).toBeInTheDocument();
   });
 
   it("prompts the user to speak while realtime ASR awaits a transcript", () => {
@@ -196,8 +205,6 @@ describe("mock interpreter workspace", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "结束" }));
     expect(screen.getByText("已结束")).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "重新开始" }),
-    ).toBeEnabled();
+    expect(screen.getByRole("button", { name: "重新开始" })).toBeEnabled();
   });
 });

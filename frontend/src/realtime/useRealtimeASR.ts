@@ -27,6 +27,7 @@ export interface RealtimeTranscriptSegment {
 export interface RealtimeASRState {
   status: RealtimeASRStatus;
   segments: RealtimeTranscriptSegment[];
+  translationSegments: RealtimeTranscriptSegment[];
   microphone: MicrophoneCaptureState;
   error: string | null;
   hasStarted: boolean;
@@ -76,6 +77,9 @@ export function useRealtimeASR(): RealtimeASRState {
   const clientRef = useRef<RealtimeASRClient | null>(null);
   const [status, setStatus] = useState<RealtimeASRStatus>("idle");
   const [segments, setSegments] = useState<RealtimeTranscriptSegment[]>([]);
+  const [translationSegments, setTranslationSegments] = useState<
+    RealtimeTranscriptSegment[]
+  >([]);
   const [error, setError] = useState<string | null>(null);
 
   const handleFrame = useCallback(
@@ -105,6 +109,7 @@ export function useRealtimeASR(): RealtimeASRState {
 
     clientRef.current?.disconnect();
     setSegments([]);
+    setTranslationSegments([]);
     setError(null);
     setStatus("connecting");
 
@@ -112,6 +117,11 @@ export function useRealtimeASR(): RealtimeASRState {
       sessionId: createSessionId(),
       onTranscript: (transcript) => {
         setSegments((current) => mergeTranscript(current, transcript));
+      },
+      onTranslation: (translation) => {
+        setTranslationSegments((current) =>
+          mergeTranscript(current, translation),
+        );
       },
       onSessionState: handleSessionState,
       onError: (message) => {
@@ -169,6 +179,7 @@ export function useRealtimeASR(): RealtimeASRState {
   return {
     status,
     segments,
+    translationSegments,
     microphone,
     error,
     hasStarted: status !== "idle",

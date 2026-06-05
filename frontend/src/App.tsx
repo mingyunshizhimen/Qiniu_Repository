@@ -335,12 +335,22 @@ function InterpreterPage() {
     realtime.status === "running" ||
     realtime.status === "stopping";
   const showRealtime =
-    realtime.hasStarted || realtime.segments.length > 0;
+    realtime.hasStarted ||
+    realtime.segments.length > 0 ||
+    realtime.translationSegments.length > 0;
   const displayedSegments = showRealtime
     ? realtime.segments.map((segment) => ({
         id: segment.id,
         sourceText: segment.text,
         translatedText: "",
+        status: segment.status,
+      }))
+    : session.segments;
+  const displayedTranslationSegments = showRealtime
+    ? realtime.translationSegments.map((segment) => ({
+        id: segment.id,
+        sourceText: "",
+        translatedText: segment.text,
         status: segment.status,
       }))
     : session.segments;
@@ -416,10 +426,10 @@ function InterpreterPage() {
         <TranscriptPanel
           title="LIVE TRANSLATION"
           language="译文字幕"
-          segments={displayedSegments}
+          segments={displayedTranslationSegments}
           translated
           emptyMessage={
-            showRealtime ? "实时翻译将在下一阶段接入" : undefined
+            showRealtime ? "正在等待确认原文后生成译文" : undefined
           }
         />
       </section>
