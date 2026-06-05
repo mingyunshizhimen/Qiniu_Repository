@@ -8,6 +8,9 @@ from backend.app.providers.base import (
     ASRAudioChunk,
     ASRProvider,
     ASRResult,
+    TranslationProvider,
+    TranslationRequest,
+    TranslationResult,
 )
 from backend.app.realtime.models import ClientCommand, ServerEvent
 from backend.app.realtime.session import RealtimeSession
@@ -18,11 +21,16 @@ class RealtimeASRPipeline:
         self,
         session: RealtimeSession,
         provider: ASRProvider,
+        translation_provider: TranslationProvider,
     ) -> None:
         self._session = session
         self._provider = provider
+        self._translation_provider = translation_provider
         self._provider_initialized = False
         self._provider_finalized = False
+        self._source_language = "zh-CN"
+        self._target_language = "en-US"
+        self._confirmed_transcripts: list[str] = []
 
     async def handle(self, command: ClientCommand) -> list[ServerEvent]:
         if command.type == "audio.append":
@@ -33,11 +41,14 @@ class RealtimeASRPipeline:
             return events
 
         if command.type == "session.start":
-            language = str(
+            self._source_language = str(
                 command.payload.get("source_language", "zh-CN")
             ).strip() or "zh-CN"
+            self._target_language = str(
+                command.payload.get("target_language", "en-US")
+            ).strip() or "en-US"
             try:
-                await self._provider.initialize(language)
+                await self._provider.initialize(self._source_language)
             except Exception as exc:
                 self._session.state = "idle"
                 return [
@@ -51,9 +62,10 @@ class RealtimeASRPipeline:
 
         if command.type == "session.stop" and self._provider_initialized:
             results = await self._finalize_provider()
-            return self._transcript_events(results) + events
+            transcript_events = self._transcript_events(results)
+            return await self._with_translation(transcript_events) + events
 
-        return events
+        return await self._with_translation(events)
 
     async def close(self) -> None:
         if self._provider_initialized and not self._provider_finalized:
@@ -87,7 +99,8 @@ class RealtimeASRPipeline:
                 )
             ]
 
-        return self._transcript_events(results, trace_id)
+        transcript_events = self._transcript_events(results, trace_id)
+        return await self._with_translation(transcript_events)
 
     async def _finalize_provider(self) -> list[ASRResult]:
         if self._provider_finalized:
@@ -149,6 +162,54 @@ class RealtimeASRPipeline:
                 )
             )
         return events
+
+    async def _with_translation(
+        self,
+        transcript_events: list[ServerEvent],
+    ) -> list[ServerEvent]:
+        events: list[ServerEvent] = []
+        for event in transcript_events:
+            events.append(event)
+            if event.type != "transcript.final":
+                continue
+
+            text = str(event.payload.get("text", "")).strip()
+            if not text:
+                continue
+
+            translated_event = await self._translate_event(event, text)
+            if translated_event is not None:
+                events.append(translated_event)
+            self._confirmed_transcripts.append(text)
+        return events
+
+    async def _translate_event(
+        self,
+        transcript_event: ServerEvent,
+        text: str,
+    ) -> ServerEvent | None:
+        try:
+            result: TranslationResult = await self._translation_provider.translate(
+                TranslationRequest(
+                    text=text,
+                    source_language=self._source_language,
+                    target_language=self._target_language,
+                    context=self._confirmed_transcripts[-5:],
+                )
+            )
+        except Exception as exc:
+            return self._error_event("translation_failed", str(exc), transcript_event.trace_id)
+
+        return self._session.event(
+            event_type="translation.final",
+            trace_id=transcript_event.trace_id,
+            payload={
+                "text": result.translated_text,
+                "source": "translation",
+                "provider": result.provider,
+                "source_text": result.source_text,
+            },
+        )
 
     def _error_event(
         self,

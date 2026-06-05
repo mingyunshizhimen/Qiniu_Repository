@@ -4,6 +4,8 @@ from pydantic import ValidationError
 from backend.app.core.config import Settings, get_settings
 from backend.app.providers.asr import get_asr_provider
 from backend.app.providers.base import ASRProvider
+from backend.app.providers.base import TranslationProvider
+from backend.app.providers.translation import get_translation_provider
 from backend.app.realtime.models import ClientCommand
 from backend.app.realtime.pipeline import RealtimeASRPipeline
 from backend.app.realtime.session import RealtimeSession
@@ -17,15 +19,24 @@ def get_realtime_asr_provider(
     return get_asr_provider(settings)
 
 
+def get_realtime_translation_provider(
+    settings: Settings = Depends(get_settings),
+) -> TranslationProvider:
+    return get_translation_provider(settings)
+
+
 @router.websocket("/ws/sessions/{session_id}")
 async def realtime_session(
     websocket: WebSocket,
     session_id: str,
     provider: ASRProvider = Depends(get_realtime_asr_provider),
+    translation_provider: TranslationProvider = Depends(
+        get_realtime_translation_provider
+    ),
 ) -> None:
     await websocket.accept()
     session = RealtimeSession(session_id)
-    pipeline = RealtimeASRPipeline(session, provider)
+    pipeline = RealtimeASRPipeline(session, provider, translation_provider)
 
     try:
         while True:

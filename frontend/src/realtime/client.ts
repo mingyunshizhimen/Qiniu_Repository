@@ -26,6 +26,10 @@ interface RealtimeASRClientOptions {
     text: string;
     status: TranscriptStatus;
   }) => void;
+  onTranslation?: (translation: {
+    text: string;
+    status: TranscriptStatus;
+  }) => void;
   onSessionState?: (state: RealtimeSessionState) => void;
   onError?: (message: string) => void;
 }
@@ -227,6 +231,21 @@ export class RealtimeASRClient {
           text,
           status:
             event.type === "transcript.final" ? "final" : "partial",
+        });
+      }
+      return;
+    }
+
+    if (
+      event.type === "translation.partial" ||
+      event.type === "translation.final"
+    ) {
+      const text = event.payload.text;
+      if (typeof text === "string" && text.trim()) {
+        this.options.onTranslation?.({
+          text,
+          status:
+            event.type === "translation.final" ? "final" : "partial",
         });
       }
       return;

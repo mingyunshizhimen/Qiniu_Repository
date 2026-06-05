@@ -55,11 +55,13 @@ describe("RealtimeASRClient", () => {
   it("starts a session, streams audio, receives transcripts, and stops", async () => {
     const socket = new FakeSocket();
     const onTranscript = vi.fn();
+    const onTranslation = vi.fn();
     const onSessionState = vi.fn();
     const client = new RealtimeASRClient({
       sessionId: "browser-test",
       createSocket: () => socket,
       onTranscript,
+      onTranslation,
       onSessionState,
     });
 
@@ -115,6 +117,20 @@ describe("RealtimeASRClient", () => {
       timestamp: "2026-06-06T00:00:02Z",
       payload: { text: "你好，七牛云。", source: "asr", provider: "dashscope" },
     });
+    socket.receive({
+      version: "1.0",
+      type: "translation.final",
+      session_id: "browser-test",
+      trace_id: "speech-trace",
+      sequence: 4,
+      timestamp: "2026-06-06T00:00:03Z",
+      payload: {
+        text: "Hello, Qiniu Cloud.",
+        source: "translation",
+        provider: "dashscope",
+        source_text: "你好，七牛云。",
+      },
+    });
 
     expect(onTranscript).toHaveBeenNthCalledWith(1, {
       text: "你好",
@@ -122,6 +138,10 @@ describe("RealtimeASRClient", () => {
     });
     expect(onTranscript).toHaveBeenNthCalledWith(2, {
       text: "你好，七牛云。",
+      status: "final",
+    });
+    expect(onTranslation).toHaveBeenNthCalledWith(1, {
+      text: "Hello, Qiniu Cloud.",
       status: "final",
     });
 
@@ -136,8 +156,8 @@ describe("RealtimeASRClient", () => {
       type: "session.state",
       session_id: "browser-test",
       trace_id: "stop-trace",
-      sequence: 4,
-      timestamp: "2026-06-06T00:00:03Z",
+      sequence: 5,
+      timestamp: "2026-06-06T00:00:04Z",
       payload: { state: "stopped" },
     });
 
