@@ -8,9 +8,13 @@
 
 - FastAPI 应用入口。
 - 版本化健康检查接口：`GET /api/v1/health`。
+- 实时会话 WebSocket：`WS /api/v1/ws/sessions/{session_id}`。
+- 会话开始、暂停、恢复和结束状态机。
+- 文本降级输入生成临时字幕与确认字幕。
+- 非法状态、错误消息和重复序号的结构化错误响应。
 - 基于 `pydantic-settings` 的环境配置。
 - 无 API Key 时自动启用 Mock Provider。
-- 健康检查自动化测试。
+- 健康检查与实时协议自动化测试。
 
 健康检查响应示例：
 
@@ -44,6 +48,66 @@ python -m uvicorn backend.app.main:app --reload
 
 需要启用百炼服务时，在本地 `.env` 中填写 `DASHSCOPE_API_KEY`。请勿提交真实密钥。
 
+## 实时协议
+
+连接地址：
+
+```text
+ws://127.0.0.1:8000/api/v1/ws/sessions/demo-session
+```
+
+客户端命令统一包含：
+
+```json
+{
+  "version": "1.0",
+  "type": "session.start",
+  "sequence": 1,
+  "payload": {}
+}
+```
+
+当前支持的命令：
+
+- `session.start`
+- `session.pause`
+- `session.resume`
+- `session.stop`
+- `text.submit`
+
+服务端事件统一包含 `version`、`type`、`session_id`、`trace_id`、`sequence`、`timestamp` 和 `payload`。`text.submit` 在活跃会话中依次产生 `transcript.partial` 与 `transcript.final`，用于模拟未来实时 ASR 的临时和确认结果。
+
+启动服务后，可在浏览器开发者工具 Console 中运行：
+
+```javascript
+const ws = new WebSocket(
+  "ws://127.0.0.1:8000/api/v1/ws/sessions/browser-demo"
+);
+
+ws.onmessage = (event) => console.log(JSON.parse(event.data));
+
+ws.onopen = () => {
+  ws.send(JSON.stringify({
+    version: "1.0",
+    type: "session.start",
+    sequence: 1,
+    payload: {
+      source_language: "zh-CN",
+      target_language: "en-US"
+    }
+  }));
+
+  ws.send(JSON.stringify({
+    version: "1.0",
+    type: "text.submit",
+    sequence: 2,
+    payload: {
+      text: "我们使用七牛云对象存储。"
+    }
+  }));
+};
+```
+
 ## 运行测试
 
 ```powershell
@@ -57,6 +121,7 @@ backend/
   app/
     api/        # HTTP API
     core/       # 配置与基础设施
+    realtime/   # 会话状态机与实时事件模型
     main.py     # FastAPI 应用入口
 docs/
   superpowers/
