@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, Route, Routes } from "react-router-dom";
 
+import { MicrophoneCapturePanel } from "./components/MicrophoneCapturePanel";
+
 
 export interface SubtitleSegment {
   id: string;
@@ -425,6 +427,8 @@ function InterpreterPage() {
           )}
         </div>
       </section>
+
+      <MicrophoneCapturePanel />
 
       <p className="workspace-footnote">
         当前页面使用 Mock 事件演示界面状态，真实麦克风与 WebSocket 将在后续 PR 接入。

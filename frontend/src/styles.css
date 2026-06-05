@@ -975,3 +975,171 @@ button {
     flex: 1;
   }
 }
+
+.microphone-capture-panel {
+  width: min(980px, calc(100% - 64px));
+  margin: 18px auto 0;
+  padding: 18px 20px 20px;
+  border: 1px solid #dbe4f2;
+  border-radius: 22px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(245, 248, 255, 0.98));
+  box-shadow: 0 18px 45px rgba(42, 58, 99, 0.08);
+}
+
+.microphone-capture-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.microphone-capture-header small {
+  display: block;
+  color: #8a95ad;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+}
+
+.microphone-capture-header strong {
+  display: block;
+  margin-top: 6px;
+  color: #1d2c4f;
+  font-size: 18px;
+}
+
+.microphone-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: #eef2fb;
+  color: #44536d;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.microphone-status i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #7b8baf;
+}
+
+.microphone-status-capturing {
+  background: rgba(33, 201, 154, 0.12);
+  color: #17896d;
+}
+
+.microphone-status-capturing i {
+  background: #21c99a;
+}
+
+.microphone-status-requesting {
+  background: rgba(64, 89, 232, 0.12);
+  color: #4059e8;
+}
+
+.microphone-status-error,
+.microphone-status-unsupported {
+  background: rgba(190, 78, 87, 0.12);
+  color: #bd4e57;
+}
+
+.microphone-capture-copy {
+  margin: 14px 0 0;
+  color: #62708a;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.microphone-meter {
+  height: 10px;
+  margin-top: 18px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e7edf8;
+}
+
+.microphone-meter span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #4059e8, #21c99a);
+  transition: width 120ms linear;
+}
+
+.microphone-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 16px 0 0;
+}
+
+.microphone-stats div {
+  padding: 12px 14px;
+  border: 1px solid #e4ebf6;
+  border-radius: 16px;
+  background: white;
+}
+
+.microphone-stats dt {
+  color: #8a95ad;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+}
+
+.microphone-stats dd {
+  margin: 8px 0 0;
+  color: #1d2c4f;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.microphone-error {
+  margin: 14px 0 0;
+  color: #bd4e57;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.microphone-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.microphone-action {
+  min-width: 138px;
+  height: 44px;
+  padding: 0 18px;
+  border-radius: 13px;
+  color: white;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  background: linear-gradient(135deg, #4e67f1, #3448d4);
+  box-shadow: 0 15px 32px rgba(55, 77, 207, 0.22);
+}
+
+@media (max-width: 640px) {
+  .microphone-capture-panel {
+    width: min(100% - 32px, 980px);
+  }
+
+  .microphone-capture-header,
+  .microphone-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .microphone-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .microphone-action {
+    width: 100%;
+  }
+}
