@@ -14,6 +14,8 @@
 - 非法状态、错误消息和重复序号的结构化错误响应。
 - DashScope Qwen-ASR Realtime WebSocket Provider。
 - 支持 PCM 音频分片发送、临时识别结果和最终识别结果解析。
+- 实时会话与 ASR Provider 的完整音频识别管线。
+- 会话停止或 WebSocket 断开时自动释放 ASR 资源。
 - 基于 `pydantic-settings` 的环境配置。
 - 无 API Key 时自动启用 Mock Provider。
 - 健康检查与实时协议自动化测试。
@@ -50,7 +52,7 @@ python -m uvicorn backend.app.main:app --reload
 
 需要启用百炼服务时，在本地 `.env` 中填写 `DASHSCOPE_API_KEY`。请勿提交真实密钥。
 
-当前阶段已完成 DashScope 实时 ASR Provider。Provider 与实时会话协议的音频管线集成将在后续独立 PR 中完成。
+当前阶段已完成 DashScope 实时 ASR Provider 与实时会话协议的音频管线集成。
 
 ## 实时协议
 
@@ -77,9 +79,27 @@ ws://127.0.0.1:8000/api/v1/ws/sessions/demo-session
 - `session.pause`
 - `session.resume`
 - `session.stop`
+- `audio.append`
 - `text.submit`
 
 服务端事件统一包含 `version`、`type`、`session_id`、`trace_id`、`sequence`、`timestamp` 和 `payload`。`text.submit` 在活跃会话中依次产生 `transcript.partial` 与 `transcript.final`，用于模拟未来实时 ASR 的临时和确认结果。
+
+`audio.append` 在活跃会话中接收 Base64 编码的音频分片：
+
+```json
+{
+  "version": "1.0",
+  "type": "audio.append",
+  "sequence": 2,
+  "payload": {
+    "audio": "BASE64_PCM_AUDIO",
+    "format": "pcm",
+    "sample_rate": 16000
+  }
+}
+```
+
+识别结果转换为 `transcript.partial` 或 `transcript.final` 事件。当前 DashScope Qwen-ASR Realtime 管线要求单声道、16-bit、16kHz PCM 音频。
 
 启动服务后，可在浏览器开发者工具 Console 中运行：
 
@@ -125,7 +145,7 @@ backend/
   app/
     api/        # HTTP API
     core/       # 配置与基础设施
-    realtime/   # 会话状态机与实时事件模型
+    realtime/   # 会话状态机、ASR 管线与实时事件模型
     main.py     # FastAPI 应用入口
 docs/
   superpowers/
