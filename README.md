@@ -57,7 +57,7 @@ python -m uvicorn backend.app.main:app --reload
 
 ## 前端演示
 
-前端使用 React、TypeScript 和 Vite，当前提供产品首页及 Mock 同传工作台。Mock 模式不请求麦克风权限，也不调用后端服务，用于独立演示页面状态和临时/确认字幕效果。
+前端使用 React、TypeScript 和 Vite，当前提供产品首页、Mock 同传工作台和真实浏览器 ASR 模式。真实模式会采集麦克风音频，将其转换为 16kHz 单声道 PCM16，并通过 WebSocket 发送到后端实时 ASR 管线。
 
 ```powershell
 cd frontend
@@ -69,6 +69,14 @@ npm run dev
 
 - `/`：产品首页与快速同传入口。
 - `/interpreter`：Mock 同传工作台。
+
+需要体验真实语音识别时：
+
+1. 在根目录 `.env` 中配置 `DASHSCOPE_API_KEY`。
+2. 启动 FastAPI 后端与 Vite 前端。
+3. 打开 `/interpreter`，点击 `Start realtime ASR` 并允许麦克风权限。
+
+未配置 API Key 时后端使用 Mock ASR，不会产生真实字幕，但页面的 Mock 演示仍可独立运行。
 
 构建与前端测试：
 
