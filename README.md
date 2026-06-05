@@ -12,6 +12,8 @@
 - 会话开始、暂停、恢复和结束状态机。
 - 文本降级输入生成临时字幕与确认字幕。
 - 非法状态、错误消息和重复序号的结构化错误响应。
+- DashScope Qwen-ASR Realtime WebSocket Provider。
+- 支持 PCM 音频分片发送、临时识别结果和最终识别结果解析。
 - 基于 `pydantic-settings` 的环境配置。
 - 无 API Key 时自动启用 Mock Provider。
 - 健康检查与实时协议自动化测试。
@@ -47,6 +49,8 @@ python -m uvicorn backend.app.main:app --reload
 - OpenAPI 文档：<http://127.0.0.1:8000/docs>
 
 需要启用百炼服务时，在本地 `.env` 中填写 `DASHSCOPE_API_KEY`。请勿提交真实密钥。
+
+当前阶段已完成 DashScope 实时 ASR Provider。Provider 与实时会话协议的音频管线集成将在后续独立 PR 中完成。
 
 ## 实时协议
 
@@ -135,6 +139,7 @@ tests/          # 自动化测试
 - [Uvicorn](https://www.uvicorn.org/)：ASGI 开发服务器。
 - [Pydantic Settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/)：环境配置管理。
 - [HTTPX](https://www.python-httpx.org/)：FastAPI 测试客户端依赖。
+- [websockets](https://websockets.readthedocs.io/)：DashScope 实时 ASR WebSocket 客户端。
 - [pytest](https://docs.pytest.org/)：自动化测试框架。
 
 完整版本约束见 [`pyproject.toml`](pyproject.toml)。
