@@ -55,6 +55,18 @@ describe("landing page", () => {
 
 
 describe("mock interpreter workspace", () => {
+  it("shows the browser microphone capture module", () => {
+    renderApp("/interpreter");
+
+    expect(
+      screen.getByRole("region", { name: "browser audio capture" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Enable microphone" }),
+    ).toBeEnabled();
+    expect(screen.getByText("Idle")).toBeInTheDocument();
+  });
+
   it("starts and progressively shows mock subtitles", () => {
     vi.useFakeTimers();
     renderApp("/interpreter");
