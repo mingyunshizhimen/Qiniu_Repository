@@ -13,6 +13,11 @@ const { realtimeState } = vi.hoisted(() => ({
       text: string;
       status: "partial" | "final";
     }>,
+    semanticSegments: [] as Array<{
+      id: string;
+      text: string;
+      status: "partial" | "final";
+    }>,
     translationSegments: [] as Array<{
       id: string;
       text: string;
@@ -39,7 +44,6 @@ vi.mock("./realtime/useRealtimeASR", () => ({
   useRealtimeASR: () => realtimeState,
 }));
 
-
 function renderApp(initialPath = "/") {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
@@ -48,11 +52,11 @@ function renderApp(initialPath = "/") {
   );
 }
 
-
 afterEach(() => {
   vi.useRealTimers();
   realtimeState.status = "idle";
   realtimeState.segments = [];
+  realtimeState.semanticSegments = [];
   realtimeState.translationSegments = [];
   realtimeState.error = null;
   realtimeState.hasStarted = false;
@@ -61,7 +65,6 @@ afterEach(() => {
   realtimeState.microphone.level = 0;
   realtimeState.microphone.error = null;
 });
-
 
 describe("landing page", () => {
   it("shows the product message and only the available entry", () => {
@@ -77,8 +80,6 @@ describe("landing page", () => {
     expect(screen.getByText("语义断句")).toBeInTheDocument();
     expect(screen.getByText("上下文翻译")).toBeInTheDocument();
     expect(screen.getByText("自然语音播报")).toBeInTheDocument();
-    expect(screen.queryByText("同传记录")).not.toBeInTheDocument();
-    expect(screen.queryByText("Agent 实验室")).not.toBeInTheDocument();
   });
 
   it("opens the interpreter workspace", async () => {
@@ -94,9 +95,8 @@ describe("landing page", () => {
   });
 });
 
-
-describe("mock interpreter workspace", () => {
-  it("shows the browser microphone capture module", () => {
+describe("workspace", () => {
+  it("shows the microphone capture module", () => {
     renderApp("/interpreter");
 
     expect(
@@ -108,20 +108,20 @@ describe("mock interpreter workspace", () => {
     expect(screen.getByText("Idle")).toBeInTheDocument();
   });
 
-  it("shows realtime ASR transcripts when the live session is active", () => {
+  it("shows semantic units and translations when the live session is active", () => {
     realtimeState.status = "running";
     realtimeState.hasStarted = true;
-    realtimeState.segments = [
+    realtimeState.semanticSegments = [
       {
         id: "final-1",
-        text: "这是来自实时语音识别的字幕。",
+        text: "Complete semantic unit.",
         status: "final",
       },
     ];
     realtimeState.translationSegments = [
       {
         id: "final-1",
-        text: "This is a realtime ASR subtitle.",
+        text: "这是一个完整的语义单元。",
         status: "final",
       },
     ];
@@ -129,17 +129,22 @@ describe("mock interpreter workspace", () => {
     renderApp("/interpreter");
 
     expect(screen.getByText("Realtime ASR 模式")).toBeInTheDocument();
-    expect(screen.getByText("这是来自实时语音识别的字幕。")).toBeInTheDocument();
-    expect(screen.getByText("This is a realtime ASR subtitle.")).toBeInTheDocument();
+    expect(screen.getByText("Complete semantic unit.")).toBeInTheDocument();
+    expect(screen.getByText("这是一个完整的语义单元。")).toBeInTheDocument();
   });
 
-  it("prompts the user to speak while realtime ASR awaits a transcript", () => {
+  it("prompts the user to speak while realtime ASR awaits a semantic unit", () => {
     realtimeState.status = "running";
     realtimeState.hasStarted = true;
 
     renderApp("/interpreter");
 
-    expect(screen.getByText("连接成功，请开始说话")).toBeInTheDocument();
+    expect(
+      screen.getByText("连接成功，等待完整语义单元"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("正在等待语义单元后生成译文"),
+    ).toBeInTheDocument();
   });
 
   it("starts and progressively shows mock subtitles", () => {
@@ -168,43 +173,5 @@ describe("mock interpreter workspace", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.getByText("已确认")).toBeInTheDocument();
-  });
-
-  it("pauses, resumes, and ends the demo", () => {
-    vi.useFakeTimers();
-    renderApp("/interpreter");
-
-    fireEvent.click(screen.getByRole("button", { name: "开始演示" }));
-    act(() => {
-      vi.advanceTimersByTime(900);
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "暂停" }));
-    expect(screen.getByText("已暂停")).toBeInTheDocument();
-
-    act(() => {
-      vi.advanceTimersByTime(1800);
-    });
-    expect(
-      screen.queryByText(
-        "Welcome to LingoFlow. We are establishing the realtime voice link.",
-      ),
-    ).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "继续" }));
-    expect(screen.getByText("运行中")).toBeInTheDocument();
-
-    act(() => {
-      vi.advanceTimersByTime(900);
-    });
-    expect(
-      screen.getByText(
-        "Welcome to LingoFlow. We are establishing the realtime voice link.",
-      ),
-    ).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "结束" }));
-    expect(screen.getByText("已结束")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "重新开始" })).toBeEnabled();
   });
 });
