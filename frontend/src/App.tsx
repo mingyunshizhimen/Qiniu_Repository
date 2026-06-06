@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, Route, Routes } from "react-router-dom";
 
 import { MicrophoneCapturePanel } from "./components/MicrophoneCapturePanel";
@@ -281,6 +281,28 @@ function TranscriptPanel({
   translated?: boolean;
   emptyMessage?: string;
 }) {
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const [followLatest, setFollowLatest] = useState(true);
+
+  useEffect(() => {
+    if (!followLatest || !contentRef.current) {
+      return;
+    }
+
+    contentRef.current.scrollTop = contentRef.current.scrollHeight;
+  }, [followLatest, segments]);
+
+  const handleScroll = () => {
+    const element = contentRef.current;
+    if (!element) {
+      return;
+    }
+
+    const distanceFromBottom =
+      element.scrollHeight - element.scrollTop - element.clientHeight;
+    setFollowLatest(distanceFromBottom < 24);
+  };
+
   return (
     <section className="transcript-panel">
       <header>
@@ -288,9 +310,19 @@ function TranscriptPanel({
           <small>{title}</small>
           <strong>{language}</strong>
         </div>
-        {!translated && <AudioWave compact />}
+        <div className="transcript-panel-header-tools">
+          {!translated && <AudioWave compact />}
+          <span className={followLatest ? "follow-badge active" : "follow-badge"}>
+            {followLatest ? "跟随最新" : "手动浏览"}
+          </span>
+        </div>
       </header>
-      <div className="transcript-content" aria-live="polite">
+      <div
+        ref={contentRef}
+        className="transcript-content"
+        aria-live="polite"
+        onScroll={handleScroll}
+      >
         {segments.length === 0 ? (
           <div className="empty-transcript">
             <span>{translated ? "TR" : "CN"}</span>
@@ -327,6 +359,105 @@ function TranscriptPanel({
 }
 
 
+function FlowTranscriptPanel({
+  title,
+  language,
+  segments,
+  translated,
+  emptyMessage,
+}: {
+  title: string;
+  language: string;
+  segments: SubtitleSegment[];
+  translated?: boolean;
+  emptyMessage?: string;
+}) {
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const [followLatest, setFollowLatest] = useState(true);
+
+  useEffect(() => {
+    if (!followLatest || !contentRef.current) {
+      return;
+    }
+
+    contentRef.current.scrollTop = contentRef.current.scrollHeight;
+  }, [followLatest, segments]);
+
+  const handleScroll = () => {
+    const element = contentRef.current;
+    if (!element) {
+      return;
+    }
+
+    const distanceFromBottom =
+      element.scrollHeight - element.scrollTop - element.clientHeight;
+    setFollowLatest(distanceFromBottom < 24);
+  };
+
+  return (
+    <section className="transcript-panel transcript-panel-flow">
+      <header>
+        <div>
+          <small>{title}</small>
+          <strong>{language}</strong>
+        </div>
+        <div className="transcript-panel-header-tools">
+          {!translated && <AudioWave compact />}
+          <span className={followLatest ? "follow-badge active" : "follow-badge"}>
+            {followLatest ? "跟随最新" : "手动浏览"}
+          </span>
+        </div>
+      </header>
+      <div
+        ref={contentRef}
+        className="transcript-content transcript-flow"
+        aria-live="polite"
+        onScroll={handleScroll}
+      >
+        {segments.length === 0 ? (
+          <div className="empty-transcript">
+            <span>{translated ? "TR" : "CN"}</span>
+            <p>
+              {emptyMessage ??
+                (translated
+                  ? "璇戞枃灏嗗湪杩欓噷鍚屾鍛堢幇"
+                  : "鐐瑰嚮寮€濮嬶紝鏌ョ湅妯℃嫙瀛楀箷娴?")}
+            </p>
+          </div>
+        ) : (
+          <div className="transcript-flow-stream">
+            {segments.map((segment, index) => (
+              <span
+                className={`transcript-flow-item ${segment.status}`}
+                key={segment.id}
+              >
+                <span className="transcript-flow-text">
+                  {translated
+                    ? segment.translatedText ||
+                      "绛夊緟纭鍘熸枃鍚庣敓鎴愯瘧鏂?"
+                    : segment.sourceText}
+                </span>
+                {!translated && (
+                  <span className="transcript-flow-status">
+                    <i />
+                    {segment.status === "partial" ? "正在识别" : "已确认"}
+                  </span>
+                )}
+                {index < segments.length - 1 && (
+                  <span className="transcript-flow-gap" aria-hidden="true">
+                    {" "}
+                  </span>
+                )}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+
 function InterpreterPage() {
   const session = useMockInterpreter();
   const realtime = useRealtimeASR();
@@ -337,15 +468,24 @@ function InterpreterPage() {
   const showRealtime =
     realtime.hasStarted ||
     realtime.segments.length > 0 ||
+    realtime.semanticSegments.length > 0 ||
     realtime.translationSegments.length > 0;
-  const displayedSegments = showRealtime
-    ? realtime.segments.map((segment) => ({
-        id: segment.id,
-        sourceText: segment.text,
-        translatedText: "",
-        status: segment.status,
-      }))
-    : session.segments;
+  const displayedSourceSegments =
+    realtime.semanticSegments.length > 0
+      ? realtime.semanticSegments.map((segment) => ({
+          id: segment.id,
+          sourceText: segment.text,
+          translatedText: "",
+          status: segment.status,
+        }))
+      : showRealtime
+        ? realtime.segments.map((segment) => ({
+            id: segment.id,
+            sourceText: segment.text,
+            translatedText: "",
+            status: segment.status,
+          }))
+        : session.segments;
   const displayedTranslationSegments = showRealtime
     ? realtime.translationSegments.map((segment) => ({
         id: segment.id,
@@ -361,8 +501,8 @@ function InterpreterPage() {
       : session.status;
   const isActive = session.status === "running" || session.status === "paused";
   const elapsed = useMemo(
-    () => (displayedSegments.length ? "00:12" : "00:00"),
-    [displayedSegments.length],
+    () => (displayedSourceSegments.length ? "00:12" : "00:00"),
+    [displayedSourceSegments.length],
   );
 
   return (
@@ -415,21 +555,21 @@ function InterpreterPage() {
       </section>
 
       <section className="transcript-grid">
-        <TranscriptPanel
+        <FlowTranscriptPanel
           title="SOURCE TRANSCRIPT"
           language="原文字幕"
-          segments={displayedSegments}
+          segments={displayedSourceSegments}
           emptyMessage={
-            showRealtime ? "连接成功，请开始说话" : undefined
+            showRealtime ? "连接成功，等待完整语义单元" : undefined
           }
         />
-        <TranscriptPanel
+        <FlowTranscriptPanel
           title="LIVE TRANSLATION"
           language="译文字幕"
           segments={displayedTranslationSegments}
           translated
           emptyMessage={
-            showRealtime ? "正在等待确认原文后生成译文" : undefined
+            showRealtime ? "正在等待语义单元后生成译文" : undefined
           }
         />
       </section>
