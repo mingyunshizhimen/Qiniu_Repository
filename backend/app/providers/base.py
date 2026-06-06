@@ -93,3 +93,33 @@ class ASRProvider(ABC):
             剩余的最终识别结果列表
         """
         ...
+@dataclass
+class TTSRequest:
+    """语音合成请求"""
+
+    text: str
+    language: str
+    voice: str = "Cherry"
+    response_format: str = "pcm"
+    sample_rate: int = 24000
+
+
+@dataclass
+class TTSResult:
+    """语音合成结果"""
+
+    audio_chunks: list[bytes] = field(default_factory=list)
+    source_text: str = ""
+    provider: str = "mock"
+    voice: str = "Cherry"
+    response_format: str = "pcm"
+    sample_rate: int = 24000
+
+
+class TTSProvider(ABC):
+    """语音合成 Provider 抽象接口"""
+
+    @abstractmethod
+    async def synthesize(self, request: TTSRequest) -> TTSResult:
+        """根据文本合成语音并返回音频块"""
+        ...
