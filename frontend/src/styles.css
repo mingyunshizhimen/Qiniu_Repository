@@ -652,6 +652,128 @@ button {
   background: #586980;
 }
 
+.speech-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  width: min(1180px, calc(100% - 64px));
+  margin: 0 auto 20px;
+  padding: 16px 20px;
+  border: 1px solid #dfe6f1;
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(244, 248, 255, 0.96));
+  box-shadow: 0 14px 36px rgba(43, 59, 101, 0.06);
+}
+
+.speech-control-copy {
+  display: grid;
+  gap: 5px;
+}
+
+.speech-control-copy small {
+  color: #98a4b7;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+}
+
+.speech-control-copy strong {
+  color: #2d3d5a;
+  font-size: 15px;
+}
+
+.speech-control-copy p {
+  margin: 0;
+  color: #74829a;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.speech-control-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.speech-status,
+.speech-queue {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.speech-status {
+  color: #51637f;
+  background: #edf2fb;
+}
+
+.speech-status-disabled {
+  color: #6d7b90;
+  background: #f3f6fb;
+}
+
+.speech-status-idle {
+  color: #2b6cb0;
+  background: #edf5ff;
+}
+
+.speech-status-speaking {
+  color: #1f8b67;
+  background: #eafaf4;
+}
+
+.speech-status-unsupported {
+  color: #8b6a1f;
+  background: #fff6df;
+}
+
+.speech-status-error {
+  color: #b24a57;
+  background: #fff0f1;
+}
+
+.speech-queue {
+  color: #596b86;
+  background: #f5f7fb;
+}
+
+.speech-switch {
+  position: relative;
+  width: 64px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: #3e4250;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+}
+
+.speech-switch span {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 4px 10px rgba(14, 23, 42, 0.18);
+  transition: transform 0.22s ease, background 0.22s ease;
+}
+
+.speech-switch.active {
+  background: linear-gradient(135deg, #4f6cff, #27c7a1);
+}
+
+.speech-switch.active span {
+  transform: translateX(30px);
+}
+
 .transcript-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1051,6 +1173,16 @@ button {
   }
 
   .session-meta {
+    justify-content: space-between;
+  }
+
+  .speech-control {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .speech-control-meta {
+    width: 100%;
     justify-content: space-between;
   }
 

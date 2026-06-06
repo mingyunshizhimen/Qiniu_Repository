@@ -155,4 +155,120 @@ describe("RealtimeASRClient", () => {
       type: "session.stop",
     });
   });
+
+  it("sends speech playback state to the backend once the session is active", async () => {
+    const socket = new FakeSocket();
+    const client = new RealtimeASRClient({
+      sessionId: "browser-test",
+      createSocket: () => socket,
+    });
+
+    const connected = client.connect();
+    socket.open();
+
+    socket.receive({
+      version: "1.0",
+      type: "session.state",
+      session_id: "browser-test",
+      trace_id: "start-trace",
+      sequence: 1,
+      timestamp: "2026-06-06T00:00:00Z",
+      payload: { state: "active" },
+    });
+    await connected;
+
+    client.setSpeechPlaybackEnabled(true);
+
+    expect(JSON.parse(socket.sent.at(-1) ?? "{}")).toMatchObject({
+      type: "speech.playback.set",
+      payload: { enabled: true },
+    });
+  });
+
+  it("forwards backend speech playback audio events", async () => {
+    const socket = new FakeSocket();
+    const onSpeechPlaybackStarted = vi.fn();
+    const onSpeechPlaybackAudio = vi.fn();
+    const onSpeechPlaybackFinished = vi.fn();
+    const onSpeechPlaybackFailed = vi.fn();
+    const client = new RealtimeASRClient({
+      sessionId: "browser-test",
+      createSocket: () => socket,
+      onSpeechPlaybackStarted,
+      onSpeechPlaybackAudio,
+      onSpeechPlaybackFinished,
+      onSpeechPlaybackFailed,
+    });
+
+    const connected = client.connect();
+    socket.open();
+
+    socket.receive({
+      version: "1.0",
+      type: "session.state",
+      session_id: "browser-test",
+      trace_id: "start-trace",
+      sequence: 1,
+      timestamp: "2026-06-06T00:00:00Z",
+      payload: { state: "active" },
+    });
+    await connected;
+
+    socket.receive({
+      version: "1.0",
+      type: "speech.playback.started",
+      session_id: "browser-test",
+      trace_id: "playback-trace",
+      sequence: 2,
+      timestamp: "2026-06-06T00:00:01Z",
+      payload: { text: "hello", source_text: "你好" },
+    });
+    socket.receive({
+      version: "1.0",
+      type: "tts.audio.delta",
+      session_id: "browser-test",
+      trace_id: "playback-trace",
+      sequence: 3,
+      timestamp: "2026-06-06T00:00:02Z",
+      payload: {
+        text: "hello",
+        source_text: "你好",
+        audio: "AQID",
+        format: "pcm",
+        sample_rate: 24000,
+        voice: "Cherry",
+        provider: "dashscope",
+      },
+    });
+    socket.receive({
+      version: "1.0",
+      type: "speech.playback.finished",
+      session_id: "browser-test",
+      trace_id: "playback-trace",
+      sequence: 4,
+      timestamp: "2026-06-06T00:00:03Z",
+      payload: { text: "hello", source_text: "你好", provider: "dashscope" },
+    });
+
+    expect(onSpeechPlaybackStarted).toHaveBeenCalledWith({
+      text: "hello",
+      sourceText: "你好",
+    });
+    expect(onSpeechPlaybackAudio).toHaveBeenCalledWith({
+      text: "hello",
+      sourceText: "你好",
+      audio: "AQID",
+      format: "pcm",
+      sampleRate: 24000,
+      voice: "Cherry",
+      provider: "dashscope",
+    });
+    expect(onSpeechPlaybackFinished).toHaveBeenCalledWith({
+      text: "hello",
+      sourceText: "你好",
+      provider: "dashscope",
+      chunks: undefined,
+    });
+    expect(onSpeechPlaybackFailed).not.toHaveBeenCalled();
+  });
 });

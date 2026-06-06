@@ -3,6 +3,7 @@ import { Link, Route, Routes } from "react-router-dom";
 
 import { MicrophoneCapturePanel } from "./components/MicrophoneCapturePanel";
 import { useRealtimeASR } from "./realtime/useRealtimeASR";
+import { type SpeechPlaybackStatus, useSpeechPlayback } from "./realtime/useSpeechPlayback";
 
 
 export interface SubtitleSegment {
@@ -420,8 +421,8 @@ function FlowTranscriptPanel({
             <p>
               {emptyMessage ??
                 (translated
-                  ? "璇戞枃灏嗗湪杩欓噷鍚屾鍛堢幇"
-                  : "鐐瑰嚮寮€濮嬶紝鏌ョ湅妯℃嫙瀛楀箷娴?")}
+                  ? "译文将会在这里同步呈现"
+                  : "点击开始，查看模拟字幕流")}
             </p>
           </div>
         ) : (
@@ -434,7 +435,7 @@ function FlowTranscriptPanel({
                 <span className="transcript-flow-text">
                   {translated
                     ? segment.translatedText ||
-                      "绛夊緟纭鍘熸枃鍚庣敓鎴愯瘧鏂?"
+                      "等待确认原文后生成译文"
                     : segment.sourceText}
                 </span>
                 {!translated && (
@@ -460,7 +461,24 @@ function FlowTranscriptPanel({
 
 function InterpreterPage() {
   const session = useMockInterpreter();
-  const realtime = useRealtimeASR();
+  const {
+    enabled: speechPlaybackEnabled,
+    setEnabled: setSpeechPlaybackEnabled,
+    clear: clearSpeechPlayback,
+    status: speechPlaybackStatus,
+    queueSize: speechPlaybackQueueSize,
+    supported: speechPlaybackSupported,
+    onSpeechPlaybackStarted,
+    onSpeechPlaybackAudio,
+    onSpeechPlaybackFinished,
+    onSpeechPlaybackFailed,
+  } = useSpeechPlayback("en-US");
+  const realtime = useRealtimeASR({
+    onSpeechPlaybackStarted,
+    onSpeechPlaybackAudio,
+    onSpeechPlaybackFinished,
+    onSpeechPlaybackFailed,
+  });
   const realtimeActive =
     realtime.status === "connecting" ||
     realtime.status === "running" ||
@@ -500,10 +518,38 @@ function InterpreterPage() {
       ? "ended"
       : session.status;
   const isActive = session.status === "running" || session.status === "paused";
+
+  useEffect(() => {
+    if (showRealtime) {
+      return;
+    }
+
+    clearSpeechPlayback();
+  }, [clearSpeechPlayback, showRealtime]);
+
+  useEffect(() => {
+    realtime.setSpeechPlaybackEnabled(speechPlaybackEnabled);
+  }, [realtime.setSpeechPlaybackEnabled, speechPlaybackEnabled]);
+
   const elapsed = useMemo(
     () => (displayedSourceSegments.length ? "00:12" : "00:00"),
     [displayedSourceSegments.length],
   );
+
+  const playbackStatusLabels: Record<SpeechPlaybackStatus, string> = {
+    disabled: "已关闭",
+    idle: "待播报",
+    speaking: "播报中",
+    unsupported: "浏览器不支持",
+    error: "播报失败",
+  };
+
+  const sessionStatusLabels: Record<SessionStatus, string> = {
+    idle: "待开始",
+    running: "运行中",
+    paused: "已暂停",
+    ended: "已结束",
+  };
 
   return (
     <main className="workspace-page">
@@ -544,7 +590,7 @@ function InterpreterPage() {
             <small>会话状态</small>
             <strong className={`status-${displayedStatus}`}>
               <i />
-              {statusLabels[displayedStatus]}
+              {sessionStatusLabels[displayedStatus]}
             </strong>
           </div>
           <div>
@@ -554,13 +600,45 @@ function InterpreterPage() {
         </div>
       </section>
 
+      <section className="speech-control" aria-label="语音播报控制">
+        <div className="speech-control-copy">
+          <small>语音播报</small>
+          <strong>{speechPlaybackEnabled ? "已开启" : "已关闭"}</strong>
+          <p>
+            {!speechPlaybackSupported
+              ? "当前浏览器不支持语音合成，仅保留字幕显示。"
+              : speechPlaybackEnabled
+                ? "确认译文会进入播报队列，字幕显示不会被打断。"
+                : "开启后，确认译文会被朗读；关闭时仅保留纯文本字幕。"}
+          </p>
+        </div>
+        <div className="speech-control-meta">
+          <span className={`speech-status speech-status-${speechPlaybackStatus}`}>
+            {playbackStatusLabels[speechPlaybackStatus]}
+          </span>
+          <span className="speech-queue">队列 {speechPlaybackQueueSize}</span>
+          <button
+            aria-checked={speechPlaybackEnabled}
+            aria-label="语音播报开关"
+            className={
+              speechPlaybackEnabled ? "speech-switch active" : "speech-switch"
+            }
+            role="switch"
+            type="button"
+            onClick={() => setSpeechPlaybackEnabled(!speechPlaybackEnabled)}
+          >
+            <span />
+          </button>
+        </div>
+      </section>
+
       <section className="transcript-grid">
         <FlowTranscriptPanel
           title="SOURCE TRANSCRIPT"
           language="原文字幕"
           segments={displayedSourceSegments}
           emptyMessage={
-            showRealtime ? "连接成功，等待完整语义单元" : undefined
+            showRealtime ? "连接成功，等待完整语义单元。" : undefined
           }
         />
         <FlowTranscriptPanel
@@ -569,7 +647,7 @@ function InterpreterPage() {
           segments={displayedTranslationSegments}
           translated
           emptyMessage={
-            showRealtime ? "正在等待语义单元后生成译文" : undefined
+            showRealtime ? "正在等待语义单元后生成译文。" : undefined
           }
         />
       </section>
@@ -630,13 +708,11 @@ function InterpreterPage() {
       />
 
       <p className="workspace-footnote">
-        Realtime ASR 需要后端服务和 DASHSCOPE_API_KEY；Mock 演示仍可独立运行。
+        Realtime ASR 需要后端服务和 DASHSCOPE_API_KEY，Mock 演示仍可独立运行。
       </p>
     </main>
   );
 }
-
-
 export function AppRoutes() {
   return (
     <Routes>

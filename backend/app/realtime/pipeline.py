@@ -1,7 +1,10 @@
 """ASR lifecycle and realtime protocol orchestration."""
 
+import asyncio
 import base64
 import binascii
+import logging
+from collections.abc import Awaitable, Callable
 from uuid import uuid4
 
 from backend.app.providers.base import (
@@ -18,6 +21,8 @@ from backend.app.realtime.models import ClientCommand, ServerEvent
 from backend.app.realtime.semantic import SemanticSegmenter
 from backend.app.realtime.session import RealtimeSession
 
+logger = logging.getLogger(__name__)
+
 
 class RealtimeASRPipeline:
     def __init__(
@@ -26,11 +31,13 @@ class RealtimeASRPipeline:
         provider: ASRProvider,
         translation_provider: TranslationProvider,
         tts_provider: TTSProvider,
+        event_sink: Callable[[ServerEvent], Awaitable[None]] | None = None,
     ) -> None:
         self._session = session
         self._provider = provider
         self._translation_provider = translation_provider
         self._tts_provider = tts_provider
+        self._event_sink = event_sink
         self._provider_initialized = False
         self._provider_finalized = False
         self._source_language = "zh-CN"
@@ -38,6 +45,7 @@ class RealtimeASRPipeline:
         self._confirmed_transcripts: list[str] = []
         self._segmenter = SemanticSegmenter()
         self._pending_segment_trace_id: str | None = None
+        self._playback_tasks: set[asyncio.Task[None]] = set()
 
     async def handle(self, command: ClientCommand) -> list[ServerEvent]:
         if command.type == "audio.append":
@@ -46,6 +54,15 @@ class RealtimeASRPipeline:
         events = self._session.handle(command)
         if self._has_error(events):
             return events
+
+        if command.type == "speech.playback.set":
+            enabled = command.payload.get("enabled")
+            if isinstance(enabled, bool) and not enabled:
+                logger.info(
+                    "Speech playback disabled; cancelling pending playback tasks for session %s",
+                    self._session.session_id,
+                )
+                self._cancel_playback_tasks()
 
         if command.type == "session.start":
             self._source_language = str(
@@ -77,11 +94,13 @@ class RealtimeASRPipeline:
                 transcript_events,
                 force_flush=True,
             )
+            self._cancel_playback_tasks()
             return semantic_events + events
 
         return await self._semantic_translation_events(events)
 
     async def close(self) -> None:
+        self._cancel_playback_tasks()
         if self._provider_initialized and not self._provider_finalized:
             await self._finalize_provider()
 
@@ -252,12 +271,25 @@ class RealtimeASRPipeline:
                 self._confirmed_transcripts.append(emitted_text)
 
                 if translated_event.type == "translation.final":
-                    events.extend(
-                        await self._playback_events(
+                    logger.info(
+                        "Translation finalized for session %s trace=%s playback=%s text=%s",
+                        self._session.session_id,
+                        translated_event.trace_id,
+                        self._session.speech_playback_enabled,
+                        str(translated_event.payload.get("text", "")).strip()[:120],
+                    )
+                    if self._event_sink is None:
+                        events.extend(
+                            await self._playback_events(
+                                translated_event,
+                                emitted_text,
+                            )
+                        )
+                    else:
+                        self._schedule_playback_events(
                             translated_event,
                             emitted_text,
                         )
-                    )
 
         return events
 
@@ -316,6 +348,12 @@ class RealtimeASRPipeline:
         )
 
         try:
+            logger.info(
+                "TTS playback started for session %s trace=%s text=%s",
+                self._session.session_id,
+                translation_event.trace_id,
+                playback_text[:120],
+            )
             result = await self._tts_provider.synthesize(
                 TTSRequest(
                     text=playback_text,
@@ -332,6 +370,12 @@ class RealtimeASRPipeline:
                     "source": "tts",
                     "message": str(exc),
                 },
+            )
+            logger.warning(
+                "TTS playback failed for session %s trace=%s: %s",
+                self._session.session_id,
+                translation_event.trace_id,
+                exc,
             )
             return [started_event, failed_event]
 
@@ -355,6 +399,13 @@ class RealtimeASRPipeline:
                 )
             )
 
+        logger.info(
+            "TTS playback finished for session %s trace=%s chunks=%s provider=%s",
+            self._session.session_id,
+            translation_event.trace_id,
+            len(result.audio_chunks),
+            result.provider,
+        )
         events.append(
             self._session.event(
                 event_type="speech.playback.finished",
@@ -369,6 +420,62 @@ class RealtimeASRPipeline:
             )
         )
         return events
+
+    def _schedule_playback_events(
+        self,
+        translation_event: ServerEvent,
+        source_text: str,
+    ) -> None:
+        task = asyncio.create_task(
+            self._publish_playback_events(translation_event, source_text)
+        )
+        self._playback_tasks.add(task)
+        task.add_done_callback(self._playback_tasks.discard)
+
+    async def _publish_playback_events(
+        self,
+        translation_event: ServerEvent,
+        source_text: str,
+    ) -> None:
+        if self._event_sink is None or not self._session.speech_playback_enabled:
+            return
+
+        try:
+            events = await self._playback_events(translation_event, source_text)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning(
+                "Async TTS playback task failed for session %s trace=%s: %s",
+                self._session.session_id,
+                translation_event.trace_id,
+                exc,
+            )
+            events = [
+                self._session.event(
+                    event_type="speech.playback.failed",
+                    trace_id=translation_event.trace_id,
+                    payload={
+                        "text": str(translation_event.payload.get("text", "")).strip(),
+                        "source_text": source_text,
+                        "source": "tts",
+                        "message": str(exc),
+                    },
+                )
+            ]
+
+        if not self._session.speech_playback_enabled:
+            return
+
+        for event in events:
+            if not self._session.speech_playback_enabled:
+                return
+            await self._event_sink(event)
+
+    def _cancel_playback_tasks(self) -> None:
+        for task in list(self._playback_tasks):
+            task.cancel()
+        self._playback_tasks.clear()
 
     def _error_event(
         self,

@@ -1,3 +1,4 @@
+import asyncio
 import base64
 
 from fastapi.testclient import TestClient
@@ -82,6 +83,12 @@ class FakeTTSProvider(TTSProvider):
             response_format=request.response_format,
             sample_rate=request.sample_rate,
         )
+
+
+class SlowTTSProvider(FakeTTSProvider):
+    async def synthesize(self, request: TTSRequest) -> TTSResult:
+        await asyncio.sleep(0.01)
+        return await super().synthesize(request)
 
 
 def command(command_type: str, sequence: int, payload: dict | None = None) -> dict:
@@ -266,6 +273,57 @@ def test_playback_enabled_emits_tts_audio_events() -> None:
             sample_rate=24000,
         )
     ]
+
+
+def test_playback_events_do_not_block_translation_delivery() -> None:
+    asr_provider = FakeASRProvider(final_text="Complete semantic unit.")
+    translation_provider = FakeTranslationProvider()
+    tts_provider = SlowTTSProvider()
+    emitted_events: list[str] = []
+
+    async def enqueue_event(event):
+        emitted_events.append(event.type)
+
+    from backend.app.realtime.pipeline import RealtimeASRPipeline
+    from backend.app.realtime.session import RealtimeSession
+
+    async def run_pipeline() -> list[str]:
+        session = RealtimeSession("audio-demo")
+        pipeline = RealtimeASRPipeline(
+            session,
+            asr_provider,
+            translation_provider,
+            tts_provider,
+            event_sink=enqueue_event,
+        )
+
+        await pipeline.handle(command("session.start", 1))
+        events = await pipeline.handle(
+            command(
+                "audio.append",
+                2,
+                {
+                    "audio": base64.b64encode(b"\x01\x02").decode("ascii"),
+                    "format": "pcm",
+                    "sample_rate": 16000,
+                },
+            )
+        )
+        await asyncio.sleep(0.05)
+        await pipeline.close()
+        return [event.type for event in events]
+
+    event_types = asyncio.run(run_pipeline())
+
+    assert event_types == [
+        "transcript.partial",
+        "transcript.final",
+        "semantic_unit.final",
+        "translation.final",
+    ]
+    assert "speech.playback.started" in emitted_events
+    assert "tts.audio.delta" in emitted_events
+    assert "speech.playback.finished" in emitted_events
 
 
 def test_incomplete_sentence_is_flushed_on_stop() -> None:

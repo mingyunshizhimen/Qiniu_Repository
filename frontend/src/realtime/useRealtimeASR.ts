@@ -34,6 +34,34 @@ export interface RealtimeASRState {
   hasStarted: boolean;
   start: () => Promise<void>;
   stop: () => Promise<void>;
+  setSpeechPlaybackEnabled: (enabled: boolean) => void;
+}
+
+export interface RealtimeASROptions {
+  onSpeechPlaybackStarted?: (payload: {
+    text: string;
+    sourceText: string;
+  }) => void;
+  onSpeechPlaybackAudio?: (payload: {
+    text: string;
+    sourceText: string;
+    audio: string;
+    format: string;
+    sampleRate: number;
+    voice: string;
+    provider: string;
+  }) => void;
+  onSpeechPlaybackFinished?: (payload: {
+    text: string;
+    sourceText: string;
+    provider?: string;
+    chunks?: number;
+  }) => void;
+  onSpeechPlaybackFailed?: (payload: {
+    text: string;
+    sourceText: string;
+    message: string;
+  }) => void;
 }
 
 export function mergeTranscript(
@@ -74,7 +102,9 @@ function createSessionId() {
   return `browser-${Date.now()}`;
 }
 
-export function useRealtimeASR(): RealtimeASRState {
+export function useRealtimeASR(
+  options: RealtimeASROptions = {},
+): RealtimeASRState {
   const clientRef = useRef<RealtimeASRClient | null>(null);
   const [status, setStatus] = useState<RealtimeASRStatus>("idle");
   const [segments, setSegments] = useState<RealtimeTranscriptSegment[]>([]);
@@ -85,6 +115,7 @@ export function useRealtimeASR(): RealtimeASRState {
     RealtimeTranscriptSegment[]
   >([]);
   const [error, setError] = useState<string | null>(null);
+  const speechPlaybackEnabledRef = useRef(false);
 
   const handleFrame = useCallback(
     (frame: {
@@ -132,6 +163,15 @@ export function useRealtimeASR(): RealtimeASRState {
         );
       },
       onSessionState: handleSessionState,
+      onSpeechPlaybackStarted: options.onSpeechPlaybackStarted,
+      onSpeechPlaybackAudio: options.onSpeechPlaybackAudio,
+      onSpeechPlaybackFinished: options.onSpeechPlaybackFinished,
+      onSpeechPlaybackFailed: options.onSpeechPlaybackFailed,
+      onSpeechPlaybackState: () => {
+        // The workspace currently keeps the browser speech toggle as the
+        // visible control. Backend playback state is available for future UI
+        // wiring, but we don't need to mirror it yet.
+      },
       onError: (message) => {
         client.disconnect();
         clientRef.current = null;
@@ -143,6 +183,7 @@ export function useRealtimeASR(): RealtimeASRState {
     clientRef.current = client;
 
     try {
+      client.setSpeechPlaybackEnabled(speechPlaybackEnabledRef.current);
       await client.connect();
       await microphone.start();
     } catch (caughtError) {
@@ -155,7 +196,15 @@ export function useRealtimeASR(): RealtimeASRState {
       );
       setStatus("error");
     }
-  }, [handleSessionState, microphone, status]);
+  }, [
+    handleSessionState,
+    microphone,
+    options.onSpeechPlaybackAudio,
+    options.onSpeechPlaybackFailed,
+    options.onSpeechPlaybackFinished,
+    options.onSpeechPlaybackStarted,
+    status,
+  ]);
 
   const stop = useCallback(async () => {
     if (!clientRef.current) {
@@ -166,6 +215,11 @@ export function useRealtimeASR(): RealtimeASRState {
     await microphone.stop();
     clientRef.current.stop(microphone.sampleRate);
   }, [microphone]);
+
+  const setSpeechPlaybackEnabled = useCallback((enabled: boolean) => {
+    speechPlaybackEnabledRef.current = enabled;
+    clientRef.current?.setSpeechPlaybackEnabled(enabled);
+  }, []);
 
   useEffect(() => {
     if (microphone.status !== "error" || status === "error") {
@@ -194,5 +248,6 @@ export function useRealtimeASR(): RealtimeASRState {
     hasStarted: status !== "idle",
     start,
     stop,
+    setSpeechPlaybackEnabled,
   };
 }

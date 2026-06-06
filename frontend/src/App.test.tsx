@@ -96,6 +96,25 @@ describe("landing page", () => {
 });
 
 describe("workspace", () => {
+  it("shows the speech playback switch", () => {
+    renderApp("/interpreter");
+
+    expect(
+      screen.getByRole("switch", { name: "语音播报开关" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("语音播报")).toBeInTheDocument();
+  });
+
+  it("keeps subtitles visible when speech playback is toggled on unsupported browsers", async () => {
+    const user = userEvent.setup();
+    renderApp("/interpreter");
+
+    await user.click(screen.getByRole("switch", { name: "语音播报开关" }));
+
+    expect(screen.getByText("浏览器不支持")).toBeInTheDocument();
+    expect(screen.getByText("语音播报")).toBeInTheDocument();
+  });
+
   it("shows the microphone capture module", () => {
     renderApp("/interpreter");
 
