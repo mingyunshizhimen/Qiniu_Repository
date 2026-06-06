@@ -30,6 +30,10 @@ interface RealtimeASRClientOptions {
     text: string;
     status: TranscriptStatus;
   }) => void;
+  onSemanticUnit?: (semanticUnit: {
+    text: string;
+    status: TranscriptStatus;
+  }) => void;
   onSessionState?: (state: RealtimeSessionState) => void;
   onError?: (message: string) => void;
 }
@@ -246,6 +250,17 @@ export class RealtimeASRClient {
           text,
           status:
             event.type === "translation.final" ? "final" : "partial",
+        });
+      }
+      return;
+    }
+
+    if (event.type === "semantic_unit.final") {
+      const text = event.payload.text;
+      if (typeof text === "string" && text.trim()) {
+        this.options.onSemanticUnit?.({
+          text,
+          status: "final",
         });
       }
       return;

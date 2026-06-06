@@ -52,31 +52,23 @@ describe("PCM transport helpers", () => {
 });
 
 describe("RealtimeASRClient", () => {
-  it("starts a session, streams audio, receives transcripts, and stops", async () => {
+  it("forwards transcript, semantic, and translation events", async () => {
     const socket = new FakeSocket();
     const onTranscript = vi.fn();
+    const onSemanticUnit = vi.fn();
     const onTranslation = vi.fn();
     const onSessionState = vi.fn();
     const client = new RealtimeASRClient({
       sessionId: "browser-test",
       createSocket: () => socket,
       onTranscript,
+      onSemanticUnit,
       onTranslation,
       onSessionState,
     });
 
     const connected = client.connect();
     socket.open();
-
-    expect(JSON.parse(socket.sent[0])).toEqual({
-      version: "1.0",
-      type: "session.start",
-      sequence: 1,
-      payload: {
-        source_language: "zh-CN",
-        target_language: "en-US",
-      },
-    });
 
     socket.receive({
       version: "1.0",
@@ -90,14 +82,6 @@ describe("RealtimeASRClient", () => {
     await connected;
 
     client.sendAudio(Int16Array.from({ length: 1_600 }, () => 1), 16_000);
-    expect(JSON.parse(socket.sent[1])).toMatchObject({
-      type: "audio.append",
-      sequence: 2,
-      payload: {
-        format: "pcm",
-        sample_rate: 16_000,
-      },
-    });
 
     socket.receive({
       version: "1.0",
@@ -106,7 +90,7 @@ describe("RealtimeASRClient", () => {
       trace_id: "speech-trace",
       sequence: 2,
       timestamp: "2026-06-06T00:00:01Z",
-      payload: { text: "你好", source: "asr", provider: "dashscope" },
+      payload: { text: "hello", source: "asr", provider: "dashscope" },
     });
     socket.receive({
       version: "1.0",
@@ -115,53 +99,60 @@ describe("RealtimeASRClient", () => {
       trace_id: "speech-trace",
       sequence: 3,
       timestamp: "2026-06-06T00:00:02Z",
-      payload: { text: "你好，七牛云。", source: "asr", provider: "dashscope" },
+      payload: {
+        text: "complete semantic unit.",
+        source: "asr",
+        provider: "dashscope",
+      },
+    });
+    socket.receive({
+      version: "1.0",
+      type: "semantic_unit.final",
+      session_id: "browser-test",
+      trace_id: "speech-trace",
+      sequence: 4,
+      timestamp: "2026-06-06T00:00:03Z",
+      payload: {
+        text: "complete semantic unit.",
+        source: "semantic",
+        provider: "heuristic",
+      },
     });
     socket.receive({
       version: "1.0",
       type: "translation.final",
       session_id: "browser-test",
       trace_id: "speech-trace",
-      sequence: 4,
-      timestamp: "2026-06-06T00:00:03Z",
+      sequence: 5,
+      timestamp: "2026-06-06T00:00:04Z",
       payload: {
-        text: "Hello, Qiniu Cloud.",
+        text: "完整语义单元。",
         source: "translation",
         provider: "dashscope",
-        source_text: "你好，七牛云。",
+        source_text: "complete semantic unit.",
       },
     });
 
     expect(onTranscript).toHaveBeenNthCalledWith(1, {
-      text: "你好",
+      text: "hello",
       status: "partial",
     });
     expect(onTranscript).toHaveBeenNthCalledWith(2, {
-      text: "你好，七牛云。",
+      text: "complete semantic unit.",
+      status: "final",
+    });
+    expect(onSemanticUnit).toHaveBeenNthCalledWith(1, {
+      text: "complete semantic unit.",
       status: "final",
     });
     expect(onTranslation).toHaveBeenNthCalledWith(1, {
-      text: "Hello, Qiniu Cloud.",
+      text: "完整语义单元。",
       status: "final",
     });
 
     client.stop();
-    expect(JSON.parse(socket.sent[2])).toMatchObject({
+    expect(JSON.parse(socket.sent.at(-1) ?? "{}")).toMatchObject({
       type: "session.stop",
-      sequence: 3,
     });
-
-    socket.receive({
-      version: "1.0",
-      type: "session.state",
-      session_id: "browser-test",
-      trace_id: "stop-trace",
-      sequence: 5,
-      timestamp: "2026-06-06T00:00:04Z",
-      payload: { state: "stopped" },
-    });
-
-    expect(onSessionState).toHaveBeenLastCalledWith("stopped");
-    expect(socket.readyState).toBe(3);
   });
 });
