@@ -34,6 +34,31 @@ interface RealtimeASRClientOptions {
     text: string;
     status: TranscriptStatus;
   }) => void;
+  onSpeechPlaybackState?: (enabled: boolean) => void;
+  onSpeechPlaybackStarted?: (payload: {
+    text: string;
+    sourceText: string;
+  }) => void;
+  onSpeechPlaybackFinished?: (payload: {
+    text: string;
+    sourceText: string;
+    provider?: string;
+    chunks?: number;
+  }) => void;
+  onSpeechPlaybackFailed?: (payload: {
+    text: string;
+    sourceText: string;
+    message: string;
+  }) => void;
+  onSpeechPlaybackAudio?: (payload: {
+    text: string;
+    sourceText: string;
+    audio: string;
+    format: string;
+    sampleRate: number;
+    voice: string;
+    provider: string;
+  }) => void;
   onSessionState?: (state: RealtimeSessionState) => void;
   onError?: (message: string) => void;
 }
@@ -110,6 +135,7 @@ export class RealtimeASRClient {
   private socket: RealtimeSocket | null = null;
   private sequence = 0;
   private sessionActive = false;
+  private pendingSpeechPlaybackEnabled: boolean | null = null;
   private connectResolve: (() => void) | null = null;
   private connectReject: ((error: Error) => void) | null = null;
 
@@ -160,6 +186,18 @@ export class RealtimeASRClient {
       this.connectResolve = resolve;
       this.connectReject = reject;
     });
+  }
+
+  setSpeechPlaybackEnabled(enabled: boolean) {
+    this.pendingSpeechPlaybackEnabled = enabled;
+    if (!this.socket || this.socket.readyState !== OPEN_READY_STATE) {
+      return;
+    }
+    if (!this.sessionActive) {
+      return;
+    }
+    this.sendCommand("speech.playback.set", { enabled });
+    this.pendingSpeechPlaybackEnabled = null;
   }
 
   sendAudio(samples: Int16Array, sampleRate: number) {
@@ -214,6 +252,9 @@ export class RealtimeASRClient {
         this.sessionActive = state === "active";
         this.options.onSessionState?.(state);
 
+        if (state === "active") {
+          this.flushPendingSpeechPlaybackSetting();
+        }
         if (state === "active" && this.connectResolve) {
           this.connectResolve();
           this.clearConnectPromise();
@@ -266,6 +307,94 @@ export class RealtimeASRClient {
       return;
     }
 
+    if (event.type === "speech.playback.state") {
+      const enabled = event.payload.enabled;
+      if (typeof enabled === "boolean") {
+        this.options.onSpeechPlaybackState?.(enabled);
+      }
+      return;
+    }
+
+    if (event.type === "speech.playback.started") {
+      const text = event.payload.text;
+      const sourceText = event.payload.source_text;
+      if (typeof text === "string" && typeof sourceText === "string") {
+        this.options.onSpeechPlaybackStarted?.({
+          text,
+          sourceText,
+        });
+      }
+      return;
+    }
+
+    if (event.type === "tts.audio.delta") {
+      const audio = event.payload.audio;
+      const text = event.payload.text;
+      const sourceText = event.payload.source_text;
+      const format = event.payload.format;
+      const sampleRate = event.payload.sample_rate;
+      const voice = event.payload.voice;
+      const provider = event.payload.provider;
+      if (
+        typeof audio === "string" &&
+        typeof text === "string" &&
+        typeof sourceText === "string" &&
+        typeof format === "string" &&
+        typeof sampleRate === "number" &&
+        typeof voice === "string" &&
+        typeof provider === "string"
+      ) {
+        this.options.onSpeechPlaybackAudio?.({
+          audio,
+          text,
+          sourceText,
+          format,
+          sampleRate,
+          voice,
+          provider,
+        });
+      }
+      return;
+    }
+
+    if (event.type === "speech.playback.finished") {
+      const text = event.payload.text;
+      const sourceText = event.payload.source_text;
+      if (typeof text === "string" && typeof sourceText === "string") {
+        this.options.onSpeechPlaybackFinished?.({
+          text,
+          sourceText,
+          provider:
+            typeof event.payload.provider === "string"
+              ? event.payload.provider
+              : undefined,
+          chunks:
+            typeof event.payload.chunks === "number"
+              ? event.payload.chunks
+              : undefined,
+        });
+      }
+      return;
+    }
+
+    if (event.type === "speech.playback.failed") {
+      const text = event.payload.text;
+      const sourceText = event.payload.source_text;
+      const message = event.payload.message;
+      if (
+        typeof text === "string" &&
+        typeof sourceText === "string" &&
+        typeof message === "string"
+      ) {
+        this.options.onSpeechPlaybackFailed?.({
+          text,
+          sourceText,
+          message,
+        });
+      }
+      return;
+    }
+
     if (event.type === "error") {
       const message = event.payload.message;
       this.fail(
@@ -298,6 +427,24 @@ export class RealtimeASRClient {
         payload,
       }),
     );
+  }
+
+  private flushPendingSpeechPlaybackSetting() {
+    if (this.pendingSpeechPlaybackEnabled === null) {
+      return;
+    }
+
+    if (!this.socket || this.socket.readyState !== OPEN_READY_STATE) {
+      return;
+    }
+
+    if (!this.sessionActive) {
+      return;
+    }
+
+    const enabled = this.pendingSpeechPlaybackEnabled;
+    this.pendingSpeechPlaybackEnabled = null;
+    this.sendCommand("speech.playback.set", { enabled });
   }
 
   private fail(message: string) {
