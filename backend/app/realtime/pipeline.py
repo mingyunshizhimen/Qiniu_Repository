@@ -13,6 +13,7 @@ from backend.app.providers.base import (
     TranslationResult,
 )
 from backend.app.realtime.models import ClientCommand, ServerEvent
+from backend.app.realtime.semantic import SemanticSegmenter
 from backend.app.realtime.session import RealtimeSession
 
 
@@ -31,6 +32,8 @@ class RealtimeASRPipeline:
         self._source_language = "zh-CN"
         self._target_language = "en-US"
         self._confirmed_transcripts: list[str] = []
+        self._segmenter = SemanticSegmenter()
+        self._pending_segment_trace_id: str | None = None
 
     async def handle(self, command: ClientCommand) -> list[ServerEvent]:
         if command.type == "audio.append":
@@ -47,6 +50,9 @@ class RealtimeASRPipeline:
             self._target_language = str(
                 command.payload.get("target_language", "en-US")
             ).strip() or "en-US"
+            self._segmenter.reset()
+            self._pending_segment_trace_id = None
+            self._confirmed_transcripts.clear()
             try:
                 await self._provider.initialize(self._source_language)
             except Exception as exc:
@@ -63,9 +69,13 @@ class RealtimeASRPipeline:
         if command.type == "session.stop" and self._provider_initialized:
             results = await self._finalize_provider()
             transcript_events = self._transcript_events(results)
-            return await self._with_translation(transcript_events) + events
+            semantic_events = await self._semantic_translation_events(
+                transcript_events,
+                force_flush=True,
+            )
+            return semantic_events + events
 
-        return await self._with_translation(events)
+        return await self._semantic_translation_events(events)
 
     async def close(self) -> None:
         if self._provider_initialized and not self._provider_finalized:
@@ -100,7 +110,7 @@ class RealtimeASRPipeline:
             ]
 
         transcript_events = self._transcript_events(results, trace_id)
-        return await self._with_translation(transcript_events)
+        return await self._semantic_translation_events(transcript_events)
 
     async def _finalize_provider(self) -> list[ASRResult]:
         if self._provider_finalized:
@@ -163,11 +173,14 @@ class RealtimeASRPipeline:
             )
         return events
 
-    async def _with_translation(
+    async def _semantic_translation_events(
         self,
         transcript_events: list[ServerEvent],
+        force_flush: bool = False,
     ) -> list[ServerEvent]:
         events: list[ServerEvent] = []
+        last_trace_id: str | None = None
+
         for event in transcript_events:
             events.append(event)
             if event.type != "transcript.final":
@@ -177,15 +190,68 @@ class RealtimeASRPipeline:
             if not text:
                 continue
 
-            translated_event = await self._translate_event(event, text)
+            last_trace_id = event.trace_id
+            if self._pending_segment_trace_id is None:
+                self._pending_segment_trace_id = event.trace_id
+
+            semantic_units = self._segmenter.push(text)
+            events.extend(
+                await self._emit_semantic_units(
+                    semantic_units,
+                    event.trace_id,
+                )
+            )
+
+        if force_flush:
+            flush_trace_id = last_trace_id or str(uuid4())
+            events.extend(
+                await self._emit_semantic_units(
+                    self._segmenter.flush(),
+                    flush_trace_id,
+                )
+            )
+
+        if self._segmenter.is_empty():
+            self._pending_segment_trace_id = None
+
+        return events
+
+    async def _emit_semantic_units(
+        self,
+        semantic_units: list[str],
+        trace_id: str,
+    ) -> list[ServerEvent]:
+        events: list[ServerEvent] = []
+        for semantic_unit in semantic_units:
+            emitted_text = semantic_unit.strip()
+            if not emitted_text:
+                continue
+
+            semantic_trace_id = self._pending_segment_trace_id or trace_id
+            semantic_event = self._session.event(
+                event_type="semantic_unit.final",
+                trace_id=semantic_trace_id,
+                payload={
+                    "text": emitted_text,
+                    "source": "semantic",
+                    "provider": "heuristic",
+                },
+            )
+            events.append(semantic_event)
+
+            translated_event = await self._translate_event(
+                semantic_event,
+                emitted_text,
+            )
             if translated_event is not None:
                 events.append(translated_event)
-            self._confirmed_transcripts.append(text)
+                self._confirmed_transcripts.append(emitted_text)
+
         return events
 
     async def _translate_event(
         self,
-        transcript_event: ServerEvent,
+        semantic_event: ServerEvent,
         text: str,
     ) -> ServerEvent | None:
         try:
@@ -198,11 +264,15 @@ class RealtimeASRPipeline:
                 )
             )
         except Exception as exc:
-            return self._error_event("translation_failed", str(exc), transcript_event.trace_id)
+            return self._error_event(
+                "translation_failed",
+                str(exc),
+                semantic_event.trace_id,
+            )
 
         return self._session.event(
             event_type="translation.final",
-            trace_id=transcript_event.trace_id,
+            trace_id=semantic_event.trace_id,
             payload={
                 "text": result.translated_text,
                 "source": "translation",
