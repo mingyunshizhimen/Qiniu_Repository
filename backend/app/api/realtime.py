@@ -1,3 +1,6 @@
+import asyncio
+import contextlib
+
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 
@@ -9,6 +12,7 @@ from backend.app.providers.translation import get_translation_provider
 from backend.app.providers.base import TTSProvider
 from backend.app.providers.tts import get_tts_provider
 from backend.app.realtime.models import ClientCommand
+from backend.app.realtime.models import ServerEvent
 from backend.app.realtime.pipeline import RealtimeASRPipeline
 from backend.app.realtime.session import RealtimeSession
 
@@ -45,12 +49,30 @@ async def realtime_session(
 ) -> None:
     await websocket.accept()
     session = RealtimeSession(session_id)
+    event_queue: asyncio.Queue[ServerEvent | None] = asyncio.Queue()
+
+    async def enqueue_event(event: ServerEvent) -> None:
+        await event_queue.put(event)
+
     pipeline = RealtimeASRPipeline(
         session,
         provider,
         translation_provider,
         tts_provider,
+        event_sink=enqueue_event,
     )
+
+    async def send_queued_events() -> None:
+        while True:
+            event = await event_queue.get()
+            if event is None:
+                return
+            try:
+                await websocket.send_json(event.model_dump(mode="json"))
+            except WebSocketDisconnect:
+                return
+
+    sender_task = asyncio.create_task(send_queued_events())
 
     try:
         while True:
@@ -61,12 +83,15 @@ async def realtime_session(
                 event = session.protocol_error(
                     "Message does not match protocol v1.0."
                 )
-                await websocket.send_json(event.model_dump(mode="json"))
+                event_queue.put_nowait(event)
                 continue
 
             for event in await pipeline.handle(command):
-                await websocket.send_json(event.model_dump(mode="json"))
+                event_queue.put_nowait(event)
     except WebSocketDisconnect:
         return
     finally:
         await pipeline.close()
+        await event_queue.put(None)
+        with contextlib.suppress(asyncio.CancelledError):
+            await sender_task

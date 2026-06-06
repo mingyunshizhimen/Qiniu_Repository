@@ -64,6 +64,15 @@ class DashScopeRealtimeTTSProvider(TTSProvider):
         if not text:
             raise ValueError("TTS request text cannot be empty")
 
+        logger.info(
+            "DashScope TTS request: language=%s voice=%s format=%s sample_rate=%s text=%s",
+            request.language,
+            request.voice.strip() or self.DEFAULT_VOICE,
+            request.response_format or "pcm",
+            request.sample_rate if request.sample_rate > 0 else self.DEFAULT_SAMPLE_RATE,
+            text[:80],
+        )
+
         websocket = await self._connect(
             f"{self.API_URL}?model={self.MODEL_NAME}",
             additional_headers={"Authorization": f"Bearer {self.api_key}"},
@@ -110,6 +119,14 @@ class DashScopeRealtimeTTSProvider(TTSProvider):
                     }
                 )
             )
+            await websocket.send(
+                json.dumps(
+                    {
+                        "event_id": self._event_id(),
+                        "type": "session.finish",
+                    }
+                )
+            )
 
             audio_chunks: list[bytes] = []
             session_finished = False
@@ -127,7 +144,12 @@ class DashScopeRealtimeTTSProvider(TTSProvider):
                 elif event_type == "session.finished":
                     session_finished = True
 
-            logger.info("DashScope TTS synthesized text: %s", text[:50])
+            logger.info(
+                "DashScope TTS synthesized text: %s chunks=%s sample_rate=%s",
+                text[:50],
+                len(audio_chunks),
+                request.sample_rate if request.sample_rate > 0 else self.DEFAULT_SAMPLE_RATE,
+            )
             return TTSResult(
                 audio_chunks=audio_chunks,
                 source_text=text,

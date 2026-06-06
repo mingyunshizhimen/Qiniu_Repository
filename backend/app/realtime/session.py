@@ -1,8 +1,11 @@
 from datetime import UTC, datetime
+import logging
 from typing import Any, Literal
 from uuid import uuid4
 
 from backend.app.realtime.models import ClientCommand, ServerEvent
+
+logger = logging.getLogger(__name__)
 
 SessionState = Literal["idle", "active", "paused", "stopped"]
 
@@ -32,6 +35,11 @@ class RealtimeSession:
             return self._handle_text_submit(command, trace_id)
 
         if command.type == "speech.playback.set":
+            logger.info(
+                "Session %s received speech playback toggle command while %s",
+                self.session_id,
+                self.state,
+            )
             return self._handle_speech_playback_set(command, trace_id)
 
         next_state = TRANSITIONS.get((self.state, command.type))
@@ -153,6 +161,11 @@ class RealtimeSession:
             ]
 
         self.speech_playback_enabled = enabled
+        logger.info(
+            "Session %s speech playback enabled=%s",
+            self.session_id,
+            self.speech_playback_enabled,
+        )
         return [
             self._event(
                 event_type="speech.playback.state",
