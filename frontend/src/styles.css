@@ -661,7 +661,9 @@ button {
 }
 
 .transcript-panel {
-  min-height: 420px;
+  display: flex;
+  flex-direction: column;
+  height: clamp(520px, 68vh, 760px);
   overflow: hidden;
   border: 1px solid #dfe6f1;
   border-radius: 22px;
@@ -683,6 +685,12 @@ button {
   gap: 4px;
 }
 
+.transcript-panel-header-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .transcript-panel header small {
   color: #98a4b7;
   font-size: 8px;
@@ -696,11 +704,70 @@ button {
 }
 
 .transcript-content {
+  flex: 1;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  min-height: 347px;
   padding: 24px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.transcript-panel-flow .transcript-content {
+  gap: 0;
+  padding: 22px 28px 28px;
+}
+
+.transcript-flow-item {
+  display: inline;
+  color: #34435f;
+  font-size: 18px;
+  line-height: 1.85;
+}
+
+.transcript-flow-stream {
+  color: #34435f;
+  font-size: 18px;
+  line-height: 1.85;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.transcript-flow-text {
+  white-space: pre-wrap;
+}
+
+.transcript-flow-item.partial .transcript-flow-text {
+  color: #273ae0;
+}
+
+.transcript-flow-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: 10px;
+  color: #8b98ad;
+  font-size: 9px;
+  font-weight: 700;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.transcript-flow-status i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #25c49a;
+}
+
+.transcript-flow-item.partial .transcript-flow-status i {
+  background: #6074e9;
+  animation: pulse 1.2s infinite;
+}
+
+.transcript-flow-gap {
+  white-space: pre;
 }
 
 .empty-transcript {
@@ -770,6 +837,22 @@ button {
 .transcript-segment.partial > span i {
   background: #6074e9;
   animation: pulse 1.2s infinite;
+}
+
+.follow-badge {
+  padding: 6px 10px;
+  border: 1px solid #dce4f2;
+  border-radius: 999px;
+  color: #7b889d;
+  font-size: 10px;
+  font-weight: 700;
+  background: #f8faff;
+}
+
+.follow-badge.active {
+  color: #2760db;
+  background: #eef4ff;
+  border-color: #d5e2ff;
 }
 
 .control-dock {
@@ -902,6 +985,10 @@ button {
     grid-template-columns: 1fr;
   }
 
+  .transcript-panel {
+    height: min(62vh, 680px);
+  }
+
   .workspace-title {
     display: none;
   }
@@ -973,6 +1060,34 @@ button {
 
   .control-buttons button {
     flex: 1;
+  }
+
+  .transcript-panel {
+    height: 58vh;
+  }
+
+  .transcript-panel > header {
+    height: auto;
+    padding: 16px 18px;
+  }
+
+  .transcript-panel-header-tools {
+    align-items: flex-end;
+    flex-direction: column;
+  }
+
+  .transcript-panel-flow .transcript-content {
+    padding: 18px 18px 24px;
+  }
+
+  .transcript-flow-stream {
+    font-size: 16px;
+    line-height: 1.8;
+  }
+
+  .transcript-flow-item {
+    font-size: 16px;
+    line-height: 1.8;
   }
 }
 
