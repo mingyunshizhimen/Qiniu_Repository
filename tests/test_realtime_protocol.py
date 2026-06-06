@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 from backend.app.api.realtime import (
     get_realtime_asr_provider,
     get_realtime_translation_provider,
+    get_realtime_tts_provider,
 )
 from backend.app.main import app
 from backend.app.providers.base import (
@@ -15,6 +16,9 @@ from backend.app.providers.base import (
     TranslationRequest,
     TranslationResult,
     TranscriptType,
+    TTSProvider,
+    TTSRequest,
+    TTSResult,
 )
 
 
@@ -61,6 +65,22 @@ class FakeTranslationProvider(TranslationProvider):
             translated_text=f"EN: {request.text}",
             source_text=request.text,
             provider="fake-translation",
+        )
+
+
+class FakeTTSProvider(TTSProvider):
+    def __init__(self) -> None:
+        self.requests: list[TTSRequest] = []
+
+    async def synthesize(self, request: TTSRequest) -> TTSResult:
+        self.requests.append(request)
+        return TTSResult(
+            audio_chunks=[b"\x01\x02", b"\x03\x04"],
+            source_text=request.text,
+            provider="fake-tts",
+            voice=request.voice,
+            response_format=request.response_format,
+            sample_rate=request.sample_rate,
         )
 
 
@@ -159,6 +179,91 @@ def test_audio_pipeline_emits_semantic_unit_and_translation_after_final_transcri
             source_language="en-US",
             target_language="zh-CN",
             context=[],
+        )
+    ]
+
+
+def test_playback_enabled_emits_tts_audio_events() -> None:
+    asr_provider = FakeASRProvider(final_text="Complete semantic unit.")
+    translation_provider = FakeTranslationProvider()
+    tts_provider = FakeTTSProvider()
+    app.dependency_overrides[get_realtime_asr_provider] = lambda: asr_provider
+    app.dependency_overrides[get_realtime_translation_provider] = (
+        lambda: translation_provider
+    )
+    app.dependency_overrides[get_realtime_tts_provider] = lambda: tts_provider
+
+    try:
+        with TestClient(app) as client:
+            with client.websocket_connect(
+                "/api/v1/ws/sessions/audio-demo"
+            ) as websocket:
+                websocket.send_json(
+                    command(
+                        "session.start",
+                        1,
+                        {
+                            "source_language": "en-US",
+                            "target_language": "zh-CN",
+                        },
+                    )
+                )
+                websocket.receive_json()
+
+                websocket.send_json(
+                    command(
+                        "speech.playback.set",
+                        2,
+                        {"enabled": True},
+                    )
+                )
+                playback_state = websocket.receive_json()
+
+                websocket.send_json(
+                    command(
+                        "audio.append",
+                        3,
+                        {
+                            "audio": base64.b64encode(b"\x01\x02").decode("ascii"),
+                            "format": "pcm",
+                            "sample_rate": 16000,
+                        },
+                    )
+                )
+                partial = websocket.receive_json()
+                transcript = websocket.receive_json()
+                semantic_unit = websocket.receive_json()
+                translation = websocket.receive_json()
+                started = websocket.receive_json()
+                delta_1 = websocket.receive_json()
+                delta_2 = websocket.receive_json()
+                finished = websocket.receive_json()
+    finally:
+        app.dependency_overrides.clear()
+
+    assert playback_state["type"] == "speech.playback.state"
+    assert playback_state["payload"] == {"enabled": True}
+    assert partial["type"] == "transcript.partial"
+    assert transcript["type"] == "transcript.final"
+    assert semantic_unit["type"] == "semantic_unit.final"
+    assert translation["type"] == "translation.final"
+    assert started["type"] == "speech.playback.started"
+    assert delta_1["type"] == "tts.audio.delta"
+    assert delta_2["type"] == "tts.audio.delta"
+    assert finished["type"] == "speech.playback.finished"
+    assert delta_1["payload"]["audio"] == base64.b64encode(b"\x01\x02").decode(
+        "ascii"
+    )
+    assert delta_2["payload"]["audio"] == base64.b64encode(b"\x03\x04").decode(
+        "ascii"
+    )
+    assert tts_provider.requests == [
+        TTSRequest(
+            text="EN: Complete semantic unit.",
+            language="zh-CN",
+            voice="Cherry",
+            response_format="pcm",
+            sample_rate=24000,
         )
     ]
 

@@ -11,6 +11,8 @@ from backend.app.providers.base import (
     TranslationProvider,
     TranslationRequest,
     TranslationResult,
+    TTSProvider,
+    TTSRequest,
 )
 from backend.app.realtime.models import ClientCommand, ServerEvent
 from backend.app.realtime.semantic import SemanticSegmenter
@@ -23,10 +25,12 @@ class RealtimeASRPipeline:
         session: RealtimeSession,
         provider: ASRProvider,
         translation_provider: TranslationProvider,
+        tts_provider: TTSProvider,
     ) -> None:
         self._session = session
         self._provider = provider
         self._translation_provider = translation_provider
+        self._tts_provider = tts_provider
         self._provider_initialized = False
         self._provider_finalized = False
         self._source_language = "zh-CN"
@@ -247,6 +251,14 @@ class RealtimeASRPipeline:
                 events.append(translated_event)
                 self._confirmed_transcripts.append(emitted_text)
 
+                if translated_event.type == "translation.final":
+                    events.extend(
+                        await self._playback_events(
+                            translated_event,
+                            emitted_text,
+                        )
+                    )
+
         return events
 
     async def _translate_event(
@@ -280,6 +292,83 @@ class RealtimeASRPipeline:
                 "source_text": result.source_text,
             },
         )
+
+    async def _playback_events(
+        self,
+        translation_event: ServerEvent,
+        source_text: str,
+    ) -> list[ServerEvent]:
+        if not self._session.speech_playback_enabled:
+            return []
+
+        playback_text = str(translation_event.payload.get("text", "")).strip()
+        if not playback_text:
+            return []
+
+        started_event = self._session.event(
+            event_type="speech.playback.started",
+            trace_id=translation_event.trace_id,
+            payload={
+                "text": playback_text,
+                "source_text": source_text,
+                "source": "tts",
+            },
+        )
+
+        try:
+            result = await self._tts_provider.synthesize(
+                TTSRequest(
+                    text=playback_text,
+                    language=self._target_language,
+                )
+            )
+        except Exception as exc:
+            failed_event = self._session.event(
+                event_type="speech.playback.failed",
+                trace_id=translation_event.trace_id,
+                payload={
+                    "text": playback_text,
+                    "source_text": source_text,
+                    "source": "tts",
+                    "message": str(exc),
+                },
+            )
+            return [started_event, failed_event]
+
+        events: list[ServerEvent] = [started_event]
+        for chunk in result.audio_chunks:
+            encoded_audio = base64.b64encode(chunk).decode("ascii")
+            events.append(
+                self._session.event(
+                    event_type="tts.audio.delta",
+                    trace_id=translation_event.trace_id,
+                    payload={
+                        "text": playback_text,
+                        "source_text": source_text,
+                        "audio": encoded_audio,
+                        "format": result.response_format,
+                        "sample_rate": result.sample_rate,
+                        "voice": result.voice,
+                        "source": "tts",
+                        "provider": result.provider,
+                    },
+                )
+            )
+
+        events.append(
+            self._session.event(
+                event_type="speech.playback.finished",
+                trace_id=translation_event.trace_id,
+                payload={
+                    "text": playback_text,
+                    "source_text": source_text,
+                    "source": "tts",
+                    "provider": result.provider,
+                    "chunks": len(result.audio_chunks),
+                },
+            )
+        )
+        return events
 
     def _error_event(
         self,

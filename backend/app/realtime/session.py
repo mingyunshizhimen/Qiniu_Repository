@@ -19,6 +19,7 @@ class RealtimeSession:
     def __init__(self, session_id: str) -> None:
         self.session_id = session_id
         self.state: SessionState = "idle"
+        self.speech_playback_enabled = False
         self._last_inbound_sequence = 0
         self._outbound_sequence = 0
 
@@ -29,6 +30,9 @@ class RealtimeSession:
 
         if command.type == "text.submit":
             return self._handle_text_submit(command, trace_id)
+
+        if command.type == "speech.playback.set":
+            return self._handle_speech_playback_set(command, trace_id)
 
         next_state = TRANSITIONS.get((self.state, command.type))
         if next_state is None:
@@ -127,6 +131,34 @@ class RealtimeSession:
                 trace_id=trace_id,
                 payload={**common_payload, "text": text},
             ),
+        ]
+
+    def _handle_speech_playback_set(
+        self,
+        command: ClientCommand,
+        trace_id: str,
+    ) -> list[ServerEvent]:
+        enabled = command.payload.get("enabled")
+        if not isinstance(enabled, bool):
+            return [
+                self._event(
+                    event_type="error",
+                    trace_id=trace_id,
+                    payload={
+                        "code": "invalid_payload",
+                        "command": command.type,
+                        "message": "speech.playback.set requires enabled: bool.",
+                    },
+                )
+            ]
+
+        self.speech_playback_enabled = enabled
+        return [
+            self._event(
+                event_type="speech.playback.state",
+                trace_id=trace_id,
+                payload={"enabled": self.speech_playback_enabled},
+            )
         ]
 
     def _invalid_transition(
