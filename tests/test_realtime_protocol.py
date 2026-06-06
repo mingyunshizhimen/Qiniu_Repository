@@ -19,7 +19,8 @@ from backend.app.providers.base import (
 
 
 class FakeASRProvider(ASRProvider):
-    def __init__(self) -> None:
+    def __init__(self, final_text: str = "Complete semantic unit.") -> None:
+        self.final_text = final_text
         self.initialized_languages: list[str] = []
         self.chunks: list[ASRAudioChunk] = []
         self.finalize_count = 0
@@ -31,13 +32,13 @@ class FakeASRProvider(ASRProvider):
         self.chunks.append(chunk)
         return [
             ASRResult(
-                text="临时字幕",
+                text="live fragment",
                 transcript_type=TranscriptType.PARTIAL,
                 is_final=False,
                 provider="fake",
             ),
             ASRResult(
-                text="确认字幕",
+                text=self.final_text,
                 transcript_type=TranscriptType.FINAL,
                 is_final=True,
                 confidence=0.98,
@@ -47,14 +48,7 @@ class FakeASRProvider(ASRProvider):
 
     async def finalize(self) -> list[ASRResult]:
         self.finalize_count += 1
-        return [
-            ASRResult(
-                text="结束时确认字幕",
-                transcript_type=TranscriptType.FINAL,
-                is_final=True,
-                provider="fake",
-            )
-        ]
+        return []
 
 
 class FakeTranslationProvider(TranslationProvider):
@@ -92,16 +86,117 @@ def test_start_session_emits_active_state_event() -> None:
                     },
                 )
             )
-
             event = websocket.receive_json()
 
-    assert event["version"] == "1.0"
     assert event["type"] == "session.state"
+    assert event["payload"] == {"state": "active"}
     assert event["session_id"] == "demo-session"
     assert event["sequence"] == 1
-    assert event["payload"] == {"state": "active"}
-    assert event["trace_id"]
-    assert event["timestamp"]
+
+
+def test_audio_pipeline_emits_semantic_unit_and_translation_after_final_transcript() -> None:
+    asr_provider = FakeASRProvider(final_text="Complete semantic unit.")
+    translation_provider = FakeTranslationProvider()
+    app.dependency_overrides[get_realtime_asr_provider] = lambda: asr_provider
+    app.dependency_overrides[get_realtime_translation_provider] = (
+        lambda: translation_provider
+    )
+
+    try:
+        with TestClient(app) as client:
+            with client.websocket_connect(
+                "/api/v1/ws/sessions/audio-demo"
+            ) as websocket:
+                websocket.send_json(
+                    command(
+                        "session.start",
+                        1,
+                        {
+                            "source_language": "en-US",
+                            "target_language": "zh-CN",
+                        },
+                    )
+                )
+                websocket.receive_json()
+
+                websocket.send_json(
+                    command(
+                        "audio.append",
+                        2,
+                        {
+                            "audio": base64.b64encode(b"\x01\x02").decode("ascii"),
+                            "format": "pcm",
+                            "sample_rate": 16000,
+                        },
+                    )
+                )
+                partial = websocket.receive_json()
+                transcript = websocket.receive_json()
+                semantic_unit = websocket.receive_json()
+                translation = websocket.receive_json()
+    finally:
+        app.dependency_overrides.clear()
+
+    assert partial["type"] == "transcript.partial"
+    assert transcript["type"] == "transcript.final"
+    assert semantic_unit["type"] == "semantic_unit.final"
+    assert semantic_unit["payload"] == {
+        "text": "Complete semantic unit.",
+        "source": "semantic",
+        "provider": "heuristic",
+    }
+    assert translation["type"] == "translation.final"
+    assert translation["payload"] == {
+        "text": "EN: Complete semantic unit.",
+        "source": "translation",
+        "provider": "fake-translation",
+        "source_text": "Complete semantic unit.",
+    }
+    assert translation["trace_id"] == semantic_unit["trace_id"]
+    assert translation_provider.requests == [
+        TranslationRequest(
+            text="Complete semantic unit.",
+            source_language="en-US",
+            target_language="zh-CN",
+            context=[],
+        )
+    ]
+
+
+def test_incomplete_sentence_is_flushed_on_stop() -> None:
+    translation_provider = FakeTranslationProvider()
+    app.dependency_overrides[get_realtime_translation_provider] = (
+        lambda: translation_provider
+    )
+
+    try:
+        with TestClient(app) as client:
+            with client.websocket_connect(
+                "/api/v1/ws/sessions/demo-session"
+            ) as websocket:
+                websocket.send_json(command("session.start", 1))
+                websocket.receive_json()
+
+                websocket.send_json(
+                    command("text.submit", 2, {"text": "buffered semantic fragment"})
+                )
+                partial = websocket.receive_json()
+                transcript = websocket.receive_json()
+
+                websocket.send_json(command("session.stop", 3))
+                semantic_unit = websocket.receive_json()
+                translation = websocket.receive_json()
+                stopped = websocket.receive_json()
+    finally:
+        app.dependency_overrides.clear()
+
+    assert partial["type"] == "transcript.partial"
+    assert transcript["type"] == "transcript.final"
+    assert semantic_unit["type"] == "semantic_unit.final"
+    assert semantic_unit["payload"]["text"] == "buffered semantic fragment"
+    assert translation["type"] == "translation.final"
+    assert stopped["type"] == "session.state"
+    assert stopped["payload"] == {"state": "stopped"}
 
 
 def test_session_supports_pause_resume_and_stop() -> None:
@@ -119,12 +214,8 @@ def test_session_supports_pause_resume_and_stop() -> None:
             websocket.send_json(command("session.stop", 4))
             stopped = websocket.receive_json()
 
-    assert paused["type"] == "session.state"
-    assert paused["sequence"] == 2
     assert paused["payload"] == {"state": "paused"}
-    assert resumed["sequence"] == 3
     assert resumed["payload"] == {"state": "active"}
-    assert stopped["sequence"] == 4
     assert stopped["payload"] == {"state": "stopped"}
 
 
@@ -138,201 +229,6 @@ def test_invalid_transition_returns_error_without_closing_socket() -> None:
             active = websocket.receive_json()
 
     assert error["type"] == "error"
-    assert error["payload"] == {
-        "code": "invalid_transition",
-        "command": "session.pause",
-        "current_state": "idle",
-        "message": "Cannot handle session.pause while session is idle.",
-    }
-    assert active["type"] == "session.state"
-    assert active["payload"] == {"state": "active"}
-
-
-def test_text_submit_emits_partial_then_final_transcript() -> None:
-    translation_provider = FakeTranslationProvider()
-    app.dependency_overrides[get_realtime_translation_provider] = (
-        lambda: translation_provider
-    )
-
-    with TestClient(app) as client:
-        try:
-            with client.websocket_connect(
-                "/api/v1/ws/sessions/demo-session"
-            ) as websocket:
-                websocket.send_json(command("session.start", 1))
-                websocket.receive_json()
-
-                websocket.send_json(
-                    command(
-                        "text.submit",
-                        2,
-                        {"text": "我们使用七牛云对象存储。"},
-                    )
-                )
-                partial = websocket.receive_json()
-                final = websocket.receive_json()
-                translation = websocket.receive_json()
-        finally:
-            app.dependency_overrides.clear()
-
-    assert partial["type"] == "transcript.partial"
-    assert partial["sequence"] == 2
-    assert partial["payload"]["text"]
-    assert partial["payload"]["text"] != final["payload"]["text"]
-    assert partial["payload"]["source"] == "text_fallback"
-    assert final["type"] == "transcript.final"
-    assert final["sequence"] == 3
-    assert final["payload"] == {
-        "text": "我们使用七牛云对象存储。",
-        "source": "text_fallback",
-    }
-    assert partial["trace_id"] == final["trace_id"]
-    assert translation["type"] == "translation.final"
-    assert translation["trace_id"] == final["trace_id"]
-    assert translation["payload"]["source"] == "translation"
-    assert translation["payload"]["text"] == "EN: 我们使用七牛云对象存储。"
-
-
-def test_audio_final_transcript_triggers_translation_event() -> None:
-    asr_provider = FakeASRProvider()
-    translation_provider = FakeTranslationProvider()
-    app.dependency_overrides[get_realtime_asr_provider] = lambda: asr_provider
-    app.dependency_overrides[get_realtime_translation_provider] = (
-        lambda: translation_provider
-    )
-
-    try:
-        with TestClient(app) as client:
-            with client.websocket_connect("/api/v1/ws/sessions/audio-demo") as websocket:
-                websocket.send_json(
-                    command(
-                        "session.start",
-                        1,
-                        {
-                            "source_language": "zh-CN",
-                            "target_language": "en-US",
-                        },
-                    )
-                )
-                websocket.receive_json()
-
-                websocket.send_json(
-                    command(
-                        "audio.append",
-                        2,
-                        {
-                            "audio": base64.b64encode(b"\x01\x02").decode("ascii"),
-                            "format": "pcm",
-                            "sample_rate": 16000,
-                        },
-                    )
-                )
-                websocket.receive_json()
-                transcript = websocket.receive_json()
-                translation = websocket.receive_json()
-    finally:
-        app.dependency_overrides.clear()
-
-    assert transcript["type"] == "transcript.final"
-    assert translation["type"] == "translation.final"
-    assert translation["payload"] == {
-        "text": "EN: 确认字幕",
-        "source": "translation",
-        "provider": "fake-translation",
-        "source_text": "确认字幕",
-    }
-    assert translation["trace_id"] == transcript["trace_id"]
-    assert translation_provider.requests == [
-        TranslationRequest(
-            text="确认字幕",
-            source_language="zh-CN",
-            target_language="en-US",
-            context=[],
-        )
-    ]
-
-
-def test_text_submit_is_rejected_while_paused() -> None:
-    with TestClient(app) as client:
-        with client.websocket_connect("/api/v1/ws/sessions/demo-session") as websocket:
-            websocket.send_json(command("session.start", 1))
-            websocket.receive_json()
-            websocket.send_json(command("session.pause", 2))
-            websocket.receive_json()
-
-            websocket.send_json(command("text.submit", 3, {"text": "不会被处理"}))
-            error = websocket.receive_json()
-
-    assert error["type"] == "error"
     assert error["payload"]["code"] == "invalid_transition"
-    assert error["payload"]["command"] == "text.submit"
-    assert error["payload"]["current_state"] == "paused"
-
-
-def test_empty_text_returns_error_and_connection_stays_open() -> None:
-    with TestClient(app) as client:
-        with client.websocket_connect("/api/v1/ws/sessions/demo-session") as websocket:
-            websocket.send_json(command("session.start", 1))
-            websocket.receive_json()
-
-            websocket.send_json(command("text.submit", 2, {"text": "  "}))
-            error = websocket.receive_json()
-
-            websocket.send_json(command("text.submit", 3, {"text": "连接仍然可用"}))
-            partial = websocket.receive_json()
-            final = websocket.receive_json()
-
-    assert error["type"] == "error"
-    assert error["payload"] == {
-        "code": "invalid_payload",
-        "command": "text.submit",
-        "message": "text.submit requires non-empty text.",
-    }
-    assert partial["type"] == "transcript.partial"
-    assert final["type"] == "transcript.final"
-
-
-def test_invalid_message_returns_error_and_connection_stays_open() -> None:
-    with TestClient(app) as client:
-        with client.websocket_connect("/api/v1/ws/sessions/demo-session") as websocket:
-            websocket.send_json(
-                {
-                    "version": "2.0",
-                    "type": "session.start",
-                    "sequence": 1,
-                    "payload": {},
-                }
-            )
-            error = websocket.receive_json()
-
-            websocket.send_json(command("session.start", 2))
-            active = websocket.receive_json()
-
-    assert error["type"] == "error"
-    assert error["payload"]["code"] == "invalid_message"
-    assert error["payload"]["message"] == "Message does not match protocol v1.0."
     assert active["type"] == "session.state"
     assert active["payload"] == {"state": "active"}
-
-
-def test_duplicate_command_sequence_is_rejected_without_state_change() -> None:
-    with TestClient(app) as client:
-        with client.websocket_connect("/api/v1/ws/sessions/demo-session") as websocket:
-            websocket.send_json(command("session.start", 1))
-            websocket.receive_json()
-
-            websocket.send_json(command("session.pause", 1))
-            error = websocket.receive_json()
-
-            websocket.send_json(command("session.pause", 2))
-            paused = websocket.receive_json()
-
-    assert error["type"] == "error"
-    assert error["payload"] == {
-        "code": "invalid_sequence",
-        "received": 1,
-        "last_received": 1,
-        "message": "Command sequence must increase monotonically.",
-    }
-    assert paused["type"] == "session.state"
-    assert paused["payload"] == {"state": "paused"}

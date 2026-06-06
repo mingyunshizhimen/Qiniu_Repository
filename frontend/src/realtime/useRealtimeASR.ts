@@ -27,6 +27,7 @@ export interface RealtimeTranscriptSegment {
 export interface RealtimeASRState {
   status: RealtimeASRStatus;
   segments: RealtimeTranscriptSegment[];
+  semanticSegments: RealtimeTranscriptSegment[];
   translationSegments: RealtimeTranscriptSegment[];
   microphone: MicrophoneCaptureState;
   error: string | null;
@@ -77,6 +78,9 @@ export function useRealtimeASR(): RealtimeASRState {
   const clientRef = useRef<RealtimeASRClient | null>(null);
   const [status, setStatus] = useState<RealtimeASRStatus>("idle");
   const [segments, setSegments] = useState<RealtimeTranscriptSegment[]>([]);
+  const [semanticSegments, setSemanticSegments] = useState<
+    RealtimeTranscriptSegment[]
+  >([]);
   const [translationSegments, setTranslationSegments] = useState<
     RealtimeTranscriptSegment[]
   >([]);
@@ -109,6 +113,7 @@ export function useRealtimeASR(): RealtimeASRState {
 
     clientRef.current?.disconnect();
     setSegments([]);
+    setSemanticSegments([]);
     setTranslationSegments([]);
     setError(null);
     setStatus("connecting");
@@ -117,6 +122,9 @@ export function useRealtimeASR(): RealtimeASRState {
       sessionId: createSessionId(),
       onTranscript: (transcript) => {
         setSegments((current) => mergeTranscript(current, transcript));
+      },
+      onSemanticUnit: (semanticUnit) => {
+        setSemanticSegments((current) => mergeTranscript(current, semanticUnit));
       },
       onTranslation: (translation) => {
         setTranslationSegments((current) =>
@@ -179,6 +187,7 @@ export function useRealtimeASR(): RealtimeASRState {
   return {
     status,
     segments,
+    semanticSegments,
     translationSegments,
     microphone,
     error,
