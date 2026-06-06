@@ -210,3 +210,15 @@ tests/          # 自动化测试
 ## 设计文档
 
 - [AI 同声传译助手设计](docs/superpowers/specs/2026-06-05-ai-simultaneous-interpreter-design.md)
+
+## 07 semantic segmentation verification
+
+Manual test checklist for the new semantic unit layer:
+
+1. Start backend with `python -m uvicorn backend.app.main:app --reload`.
+2. Start frontend with `cd frontend && npm run dev`.
+3. Open `/interpreter` and click `Start realtime ASR`.
+4. Speak one complete sentence with a clear pause or punctuation boundary.
+5. Success: the websocket emits `semantic_unit.final` before `translation.final`.
+6. Success: the source panel shows a complete semantic unit instead of tiny fragments.
+7. Success: the translation panel updates only after the semantic unit is finalized.
