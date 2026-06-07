@@ -2,12 +2,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, Route, Routes } from "react-router-dom";
 
 import { MicrophoneCapturePanel } from "./components/MicrophoneCapturePanel";
-import { GlossaryPanel } from "./components/GlossaryPanel";
+import { GlossarySummaryPanel } from "./components/GlossarySummaryPanel";
 import { useRealtimeASR } from "./realtime/useRealtimeASR";
 import {
   type SpeechPlaybackStatus,
   useSpeechPlayback,
 } from "./realtime/useSpeechPlayback";
+import { GlossaryPage } from "./pages/GlossaryPage";
 
 export interface SubtitleSegment {
   id: string;
@@ -541,7 +542,7 @@ function InterpreterPage() {
         />
       </section>
 
-      <GlossaryPanel termHits={realtime.termHits} />
+      <GlossarySummaryPanel termHits={realtime.termHits} />
 
       <section className="control-dock" aria-label="演示控制">
         <div className="dock-message">
@@ -610,6 +611,7 @@ export function AppRoutes() {
     <Routes>
       <Route path="/" element={<LandingPage />} />
       <Route path="/interpreter" element={<InterpreterPage />} />
+      <Route path="/glossary" element={<GlossaryPage />} />
     </Routes>
   );
 }
