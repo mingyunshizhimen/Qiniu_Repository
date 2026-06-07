@@ -271,6 +271,20 @@ function FlowTranscriptPanel({
 }) {
   const contentRef = useRef<HTMLDivElement | null>(null);
   const [followLatest, setFollowLatest] = useState(true);
+  const liveTail = segments.at(-1)?.status === "partial" ? segments.at(-1) : null;
+  const confirmedSegments = liveTail ? segments.slice(0, -1) : segments;
+  const bodyText = confirmedSegments
+    .map((segment) =>
+      translated
+        ? segment.translatedText || "等待确认原文后生成译文"
+        : segment.sourceText,
+    )
+    .join("");
+  const liveTailText = liveTail
+    ? translated
+      ? liveTail.translatedText || "等待确认原文后生成译文"
+      : liveTail.sourceText
+    : "";
 
   useEffect(() => {
     if (!followLatest || !contentRef.current) {
@@ -303,6 +317,11 @@ function FlowTranscriptPanel({
           <span className={followLatest ? "follow-badge active" : "follow-badge"}>
             {followLatest ? "跟随最新" : "手动浏览"}
           </span>
+          {liveTail && (
+            <span className={translated ? "tail-badge translated" : "tail-badge"}>
+              {translated ? "临时译文" : "实时尾巴"}
+            </span>
+          )}
         </div>
       </header>
       <div
@@ -322,31 +341,20 @@ function FlowTranscriptPanel({
             </p>
           </div>
         ) : (
-          <div className="transcript-flow-stream">
-            {segments.map((segment, index) => (
+          <p className="transcript-flow-paragraph">
+            {bodyText && <span className="transcript-flow-body">{bodyText}</span>}
+            {liveTail && (
               <span
-                className={`transcript-flow-item ${segment.status}`}
-                key={segment.id}
+                className={
+                  translated
+                    ? "transcript-flow-tail translated"
+                    : "transcript-flow-tail"
+                }
               >
-                <span className="transcript-flow-text">
-                  {translated
-                    ? segment.translatedText || "等待确认原文后生成译文"
-                    : segment.sourceText}
-                </span>
-                {!translated && (
-                  <span className="transcript-flow-status">
-                    <i />
-                    {segment.status === "partial" ? "正在识别" : "已确认"}
-                  </span>
-                )}
-                {index < segments.length - 1 && (
-                  <span className="transcript-flow-gap" aria-hidden="true">
-                    {" "}
-                  </span>
-                )}
+                {liveTailText}
               </span>
-            ))}
-          </div>
+            )}
+          </p>
         )}
       </div>
     </section>
