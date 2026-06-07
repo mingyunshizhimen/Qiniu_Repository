@@ -7,7 +7,7 @@ interface GlossarySummaryPanelProps {
 }
 
 export function GlossarySummaryPanel({ termHits }: GlossarySummaryPanelProps) {
-  const visibleHits = termHits.slice(0, 3);
+  const visibleHits = termHits;
 
   return (
     <section className="glossary-summary-panel" aria-label="glossary summary">
