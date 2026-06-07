@@ -78,6 +78,7 @@ export interface RealtimeASROptions {
     original: string;
     corrected: string;
     strategy: string;
+    originalTranslation?: string;
     corrections: Array<{
       source_term: string;
       target_term: string;
@@ -219,34 +220,62 @@ export function useRealtimeASR(
         };
         setCorrections((current) => [...current, newCorrection]);
 
-        // 原文纠错：替换文字 + 标记高亮
+        // 原文纠错：只高亮术语部分（source_term），不高亮整句
+        const highlightTerm =
+          correction.corrections?.[0]?.source_term || correction.corrected;
         setSegments((currentSegments) =>
           currentSegments.map((segment) => {
-            if (segment.status === "final" && segment.text === correction.original) {
-              return { ...segment, text: correction.corrected, correctedHighlight: correction.corrected };
+            if (
+              segment.status === "final" &&
+              segment.text === correction.original
+            ) {
+              return {
+                ...segment,
+                text: correction.corrected,
+                correctedHighlight: highlightTerm,
+              };
             }
             return segment;
           }),
         );
 
-        // 译文联动修正：用术语表的 target_term 替换对应译文
+        // 译文联动修正：基于原文位置比例做局部替换
         if (correction.corrections && correction.corrections.length > 0) {
           const targetTerm = correction.corrections[0].target_term;
-          if (targetTerm) {
+          const originalFragment = correction.corrections[0].original_fragment;
+          const originalTranslation = correction.originalTranslation;
+
+          if (targetTerm && originalFragment && originalTranslation) {
             setTranslationSegments((currentSegments) => {
-              // 找到最后一个已完成的 final 翻译 segment（就是刚翻译完的那个）
               const lastFinalIdx = [...currentSegments]
                 .map((s, i) => (s.status === "final" ? i : -1))
                 .filter((i) => i >= 0)
                 .pop();
 
-              if (lastFinalIdx === undefined || lastFinalIdx < 0) return currentSegments;
+              if (lastFinalIdx === undefined || lastFinalIdx < 0)
+                return currentSegments;
 
               return currentSegments.map((segment, idx) => {
                 if (idx === lastFinalIdx) {
+                  // 用位置比例算法：original_fragment 在原文中的位置比例
+                  // → 映射到原译文中的对应位置 → 替换为 target_term
+                  const fragStart = correction.original.indexOf(originalFragment);
+                  const fragEnd = fragStart + originalFragment.length;
+                  const ratioStart = fragStart / correction.original.length;
+                  const ratioEnd = fragEnd / correction.original.length;
+
+                  const txText = segment.text;
+                  const replaceStart = Math.floor(txText.length * ratioStart);
+                  const replaceEnd = Math.ceil(txText.length * ratioEnd);
+
+                  const correctedTx =
+                    txText.slice(0, replaceStart) +
+                    targetTerm +
+                    txText.slice(replaceEnd);
+
                   return {
                     ...segment,
-                    text: targetTerm,
+                    text: correctedTx,
                     correctedHighlight: targetTerm,
                   };
                 }

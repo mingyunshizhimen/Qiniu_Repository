@@ -276,21 +276,23 @@ function FlowTranscriptPanel({
   const liveTail = segments.at(-1)?.status === "partial" ? segments.at(-1) : null;
   const confirmedSegments = liveTail ? segments.slice(0, -1) : segments;
 
-  // 渲染 segment 文本，如果有 correctedHighlight 则高亮显示
+  // 渲染 segment 文本：correctedHighlight 是文本子串时只高亮那部分
   const renderSegmentText = (segment: SubtitleSegment) => {
     const text = translated
       ? segment.translatedText || "等待确认原文后生成译文"
       : segment.sourceText;
 
     if (segment.correctedHighlight && text.includes(segment.correctedHighlight)) {
-      // 将文本拆分为：[前缀, 高亮部分, 后缀]
       const highlight = segment.correctedHighlight;
       const idx = text.indexOf(highlight);
       if (idx >= 0) {
         return (
           <>
             {text.slice(0, idx)}
-            <span className="correction-text-highlight" key={`hl-${segment.id}`}>
+            <span
+              className="correction-text-highlight"
+              key={`hl-${segment.id}`}
+            >
               {highlight}
             </span>
             {text.slice(idx + highlight.length)}

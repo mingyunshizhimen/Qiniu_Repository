@@ -481,7 +481,12 @@ class RealtimeASRPipeline:
             )
         # 异步调度纠错（不阻塞主链路）
         if self._event_sink is not None:
-            asyncio.create_task(self._schedule_correction(source_text, translated_event.trace_id))
+            translated_text = str(translated_event.payload.get("text", "")).strip()
+            asyncio.create_task(
+                self._schedule_correction(
+                    source_text, translated_event.trace_id, translated_text
+                )
+            )
         return events
 
     def _schedule_final_translation_event(
@@ -754,7 +759,9 @@ class RealtimeASRPipeline:
             task.cancel()
         self._correction_tasks.clear()
 
-    async def _schedule_correction(self, original_text: str, trace_id: str) -> None:
+    async def _schedule_correction(
+        self, original_text: str, trace_id: str, translated_text: str = ""
+    ) -> None:
         """
         异步调度纠错任务。
 
@@ -768,11 +775,15 @@ class RealtimeASRPipeline:
         if len(original_text.strip()) < 4:
             return
 
-        task = asyncio.create_task(self._run_correction(original_text, trace_id))
+        task = asyncio.create_task(
+            self._run_correction(original_text, trace_id, translated_text)
+        )
         self._correction_tasks.add(task)
         task.add_done_callback(self._correction_tasks.discard)
 
-    async def _run_correction(self, original_text: str, trace_id: str) -> None:
+    async def _run_correction(
+        self, original_text: str, trace_id: str, translated_text: str = ""
+    ) -> None:
         """
         执行纠错检测与修正。
 
@@ -855,6 +866,7 @@ class RealtimeASRPipeline:
                 "corrected": corrected_text,
                 "strategy": "term_similarity",
                 "corrections": matched_terms,
+                "original_translation": translated_text,
             },
         )
 

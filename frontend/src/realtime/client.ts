@@ -72,6 +72,7 @@ interface RealtimeASRClientOptions {
     original: string;
     corrected: string;
     strategy: string;
+    originalTranslation?: string;
     corrections: Array<{
       source_term: string;
       target_term: string;
@@ -438,11 +439,16 @@ export class RealtimeASRClient {
       const original = event.payload.original;
       const corrected = event.payload.corrected;
       const strategy = event.payload.strategy;
+      const originalTranslation =
+        typeof event.payload.original_translation === "string"
+          ? event.payload.original_translation
+          : undefined;
       const corrections = Array.isArray(event.payload.corrections)
         ? event.payload.corrections.map((c: Record<string, unknown>) => ({
             source_term: typeof c.source_term === "string" ? c.source_term : "",
             target_term: typeof c.target_term === "string" ? c.target_term : "",
-            original_fragment: typeof c.original_fragment === "string" ? c.original_fragment : "",
+            original_fragment:
+              typeof c.original_fragment === "string" ? c.original_fragment : "",
             edit_distance: typeof c.edit_distance === "number" ? c.edit_distance : 0,
           }))
         : [];
@@ -452,6 +458,7 @@ export class RealtimeASRClient {
           original,
           corrected,
           strategy: typeof strategy === "string" ? strategy : "",
+          originalTranslation,
           corrections,
         });
       }
