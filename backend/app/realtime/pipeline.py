@@ -26,24 +26,6 @@ from backend.app.services.glossary import GlossaryService, get_glossary_service
 logger = logging.getLogger(__name__)
 
 
-def _edit_distance(s1: str, s2: str) -> int:
-    """计算两个字符串的编辑距离（Levenshtein distance）。"""
-    if len(s1) < len(s2):
-        return _edit_distance(s2, s1)
-    if len(s2) == 0:
-        return len(s1)
-    prev_row = list(range(len(s2) + 1))
-    for i, c1 in enumerate(s1):
-        curr_row = [i + 1]
-        for j, c2 in enumerate(s2):
-            insertions = prev_row[j + 1] + 1
-            deletions = curr_row[j] + 1
-            substitutions = prev_row[j] + (c1 != c2)
-            curr_row.append(min(insertions, deletions, substitutions))
-        prev_row = curr_row
-    return prev_row[-1]
-
-
 class RealtimeASRPipeline:
     def __init__(
         self,
@@ -73,8 +55,6 @@ class RealtimeASRPipeline:
         self._final_translation_lock = asyncio.Lock()
         self._preview_translation_revision = 0
         self._last_partial_translation_text = ""
-        self._correction_tasks: set[asyncio.Task[None]] = set()
-        self._corrected_trace_ids: set[str] = set()  # 防止重复纠正
 
     async def handle(self, command: ClientCommand) -> list[ServerEvent]:
         if command.type == "audio.append":
@@ -136,7 +116,6 @@ class RealtimeASRPipeline:
         self._cancel_preview_translation_tasks()
         self._cancel_final_translation_tasks()
         self._cancel_playback_tasks()
-        self._cancel_correction_tasks()
         if self._provider_initialized and not self._provider_finalized:
             await self._finalize_provider()
 
@@ -479,14 +458,6 @@ class RealtimeASRPipeline:
                 translated_event,
                 source_text,
             )
-        # 异步调度纠错（不阻塞主链路）
-        if self._event_sink is not None:
-            translated_text = str(translated_event.payload.get("text", "")).strip()
-            asyncio.create_task(
-                self._schedule_correction(
-                    source_text, translated_event.trace_id, translated_text
-                )
-            )
         return events
 
     def _schedule_final_translation_event(
@@ -752,136 +723,6 @@ class RealtimeASRPipeline:
         for task in list(self._playback_tasks):
             task.cancel()
         self._playback_tasks.clear()
-
-    def _cancel_correction_tasks(self) -> None:
-        """取消所有待执行的纠错任务。"""
-        for task in list(self._correction_tasks):
-            task.cancel()
-        self._correction_tasks.clear()
-
-    async def _schedule_correction(
-        self, original_text: str, trace_id: str, translated_text: str = ""
-    ) -> None:
-        """
-        异步调度纠错任务。
-
-        主链路不阻塞：字幕先显示给用户，后台异步检查是否需要纠正。
-        纠错策略：术语表近似匹配（编辑距离 <= 阈值）。
-        """
-        if trace_id in self._corrected_trace_ids:
-            return
-
-        # 只对足够长的文本做纠错（太短的误纠风险高）
-        if len(original_text.strip()) < 4:
-            return
-
-        task = asyncio.create_task(
-            self._run_correction(original_text, trace_id, translated_text)
-        )
-        self._correction_tasks.add(task)
-        task.add_done_callback(self._correction_tasks.discard)
-
-    async def _run_correction(
-        self, original_text: str, trace_id: str, translated_text: str = ""
-    ) -> None:
-        """
-        执行纠错检测与修正。
-
-        策略：
-        1. 遍历术语表所有启用的源术语
-        2. 在原文中查找每个术语的近似匹配（编辑距离 <= max(1, len(term)*0.3)）
-        3. 发现错误后推送 transcript.corrected 事件
-        """
-        if self._event_sink is None:
-            return
-
-        text = original_text.strip()
-        if not text:
-            return
-
-        terms = self._glossary_service.list_terms()
-        if not terms:
-            return
-
-        corrected_text = text
-        matched_terms: list[dict] = []
-
-        for term in terms:
-            source = term.source_term
-
-            # 在文本中查找源术语或其近似变体
-            # 策略：逐个字符窗口扫描，找编辑距离最小的片段
-            best_pos = -1
-            best_dist = float("inf")
-
-            for start in range(len(text) - len(source) + 1):
-                window = text[start:start + len(source)]
-                dist = _edit_distance(window, source)
-                if dist < best_dist:
-                    best_dist = dist
-                    best_pos = start
-
-            # 也检查更短/更长的窗口（ASR 可能多/少识别字）
-            for length in range(max(2, len(source) - 1), min(len(source) + 2, len(text) + 1)):
-                for start in range(len(text) - length + 1):
-                    window = text[start:start + length]
-                    dist = _edit_distance(window, source)
-                    threshold = max(1, int(len(source) * 0.3))
-                    if dist <= threshold and dist < best_dist:
-                        best_dist = dist
-                        best_pos = start
-
-            threshold = max(1, int(len(source) * 0.3))
-            if 0 <= best_pos <= len(text) and best_dist <= threshold and best_dist > 0:
-                # 找到近似匹配且不是精确匹配（精确匹配不需要纠正）
-                window_end = best_pos + len(source)
-                actual_window = text[best_pos:window_end]
-                if actual_window != source:
-                    corrected_text = text[:best_pos] + source + text[window_end:]
-                    matched_terms.append({
-                        "source_term": term.source_term,
-                        "target_term": term.target_term,
-                        "original_fragment": actual_window,
-                        "edit_distance": best_dist,
-                    })
-                    text = corrected_text  # 用修正后的文本继续检查其他术语
-                    logger.info(
-                        "纠错发现: '%s' → '%s' (术语=%s, 编辑距离=%d)",
-                        actual_window,
-                        source,
-                        term.source_term,
-                        best_dist,
-                    )
-
-        if not matched_terms or corrected_text == original_text:
-            return  # 无需纠正
-
-        self._corrected_trace_ids.add(trace_id)
-
-        event = self._session.event(
-            event_type="transcript.corrected",
-            trace_id=trace_id,
-            payload={
-                "original": original_text,
-                "corrected": corrected_text,
-                "strategy": "term_similarity",
-                "corrections": matched_terms,
-                "original_translation": translated_text,
-            },
-        )
-
-        logger.info(
-            "推送纠错事件: session=%s trace=%s 原文=%s 纠正=%s",
-            self._session.session_id,
-            trace_id,
-            original_text[:50],
-            corrected_text[:50],
-        )
-
-        try:
-            await self._event_sink(event)
-        except Exception as exc:
-            logger.warning("发送纠错事件失败: %s", exc)
 
     def _cancel_preview_translation_tasks(self) -> None:
         for task in list(self._preview_translation_tasks):

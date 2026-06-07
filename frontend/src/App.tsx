@@ -16,8 +16,6 @@ export interface SubtitleSegment {
   sourceText: string;
   translatedText: string;
   status: "partial" | "final";
-  /** 纠错高亮文字：如果此 segment 被纠错过，存储纠正后的文字用于渲染高亮 */
-  correctedHighlight?: string;
 }
 
 type SessionStatus = "idle" | "running" | "paused" | "ended";
@@ -276,35 +274,10 @@ function FlowTranscriptPanel({
   const liveTail = segments.at(-1)?.status === "partial" ? segments.at(-1) : null;
   const confirmedSegments = liveTail ? segments.slice(0, -1) : segments;
 
-  // 渲染 segment 文本：correctedHighlight 是文本子串时只高亮那部分
-  const renderSegmentText = (segment: SubtitleSegment) => {
-    const text = translated
-      ? segment.translatedText || "等待确认原文后生成译文"
-      : segment.sourceText;
-
-    if (segment.correctedHighlight && text.includes(segment.correctedHighlight)) {
-      const highlight = segment.correctedHighlight;
-      const idx = text.indexOf(highlight);
-      if (idx >= 0) {
-        return (
-          <>
-            {text.slice(0, idx)}
-            <span
-              className="correction-text-highlight"
-              key={`hl-${segment.id}`}
-            >
-              {highlight}
-            </span>
-            {text.slice(idx + highlight.length)}
-          </>
-        );
-      }
-    }
-    return text;
-  };
-
   const bodyContent = confirmedSegments.map((segment, i) => (
-    <span key={segment.id || i}>{renderSegmentText(segment)}</span>
+    <span key={segment.id || i}>
+      {translated ? segment.translatedText || "等待确认原文后生成译文" : segment.sourceText}
+    </span>
   ));
 
   const liveTailText = liveTail
@@ -433,7 +406,6 @@ function InterpreterPage() {
           sourceText: segment.text,
           translatedText: "",
           status: segment.status,
-          correctedHighlight: segment.correctedHighlight,
         }))
       : session.segments;
 
@@ -443,7 +415,6 @@ function InterpreterPage() {
         sourceText: "",
         translatedText: segment.text,
         status: segment.status,
-        correctedHighlight: segment.correctedHighlight,
       }))
     : session.segments;
 
@@ -644,7 +615,7 @@ function InterpreterPage() {
         />
       </section>
 
-      <GlossarySummaryPanel termHits={realtime.termHits} corrections={realtime.corrections} />
+      <GlossarySummaryPanel termHits={realtime.termHits} />
 
       <section className="control-dock" aria-label="演示控制">
         <div className="dock-message">

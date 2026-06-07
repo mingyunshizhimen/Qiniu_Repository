@@ -23,16 +23,6 @@ export interface RealtimeTranscriptSegment {
   id: string;
   text: string;
   status: TranscriptStatus;
-  /** 纠错高亮：如果此 segment 被纠错过，这里存储纠正后的文字（用于渲染高亮） */
-  correctedHighlight?: string;
-}
-
-export interface TranscriptCorrection {
-  id: string;
-  original: string;
-  corrected: string;
-  strategy: string;
-  timestamp: number;
 }
 
 export interface RealtimeASRState {
@@ -75,18 +65,6 @@ export interface RealtimeASROptions {
     text: string;
     sourceText: string;
     message: string;
-  }) => void;
-  onCorrection?: (correction: {
-    original: string;
-    corrected: string;
-    strategy: string;
-    originalTranslation?: string;
-    corrections: Array<{
-      source_term: string;
-      target_term: string;
-      original_fragment: string;
-      edit_distance: number;
-    }>;
   }) => void;
 }
 
@@ -142,7 +120,6 @@ export function useRealtimeASR(
   >([]);
   const [termHits, setTermHits] = useState<RealtimeTermHit[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [corrections, setCorrections] = useState<TranscriptCorrection[]>([]);
   const speechPlaybackEnabledRef = useRef(false);
 
   const handleFrame = useCallback(
@@ -214,36 +191,6 @@ export function useRealtimeASR(
       onSpeechPlaybackAudio: options.onSpeechPlaybackAudio,
       onSpeechPlaybackFinished: options.onSpeechPlaybackFinished,
       onSpeechPlaybackFailed: options.onSpeechPlaybackFailed,
-      onCorrection: (correction) => {
-        const newCorrection: TranscriptCorrection = {
-          id: `correction-${Date.now()}`,
-          original: correction.original,
-          corrected: correction.corrected,
-          strategy: correction.strategy,
-          timestamp: Date.now(),
-        };
-        setCorrections((current) => [...current, newCorrection]);
-
-        // 原文纠错：只高亮术语部分（source_term），不高亮整句
-        const highlightTerm =
-          correction.corrections?.[0]?.source_term || correction.corrected;
-        setSegments((currentSegments) =>
-          currentSegments.map((segment) => {
-            if (
-              segment.status === "final" &&
-              segment.text === correction.original
-            ) {
-              return {
-                ...segment,
-                text: correction.corrected,
-                correctedHighlight: highlightTerm,
-              };
-            }
-            return segment;
-          }),
-        );
-
-      },
       onSpeechPlaybackState: () => {
         // The workspace currently keeps the browser speech toggle as the
         // visible control. Backend playback state is available for future UI
@@ -321,7 +268,6 @@ export function useRealtimeASR(
     semanticSegments,
     translationSegments,
     termHits,
-    corrections,
     microphone,
     error,
     hasStarted: status !== "idle",
