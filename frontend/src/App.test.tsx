@@ -194,6 +194,54 @@ describe("workspace", () => {
     expect(screen.getByText("完整语义单元")).toBeInTheDocument();
   });
 
+  it("renders realtime subtitles as a continuous flow with live tail badges", () => {
+    realtimeState.status = "running";
+    realtimeState.hasStarted = true;
+    realtimeState.segments = [
+      {
+        id: "final-1",
+        text: "世代居住于此的人们守着依山傍水的土地。",
+        status: "final",
+      },
+      {
+        id: "partial-live",
+        text: "春耕播种，夏雨除草，秋收屯粮",
+        status: "partial",
+      },
+    ];
+    realtimeState.translationSegments = [
+      {
+        id: "final-1",
+        text: "People who have lived here for generations guard their land.",
+        status: "final",
+      },
+      {
+        id: "partial-live",
+        text: "Spring plowing and sowing, summer weeding",
+        status: "partial",
+      },
+    ];
+
+    renderApp("/interpreter");
+
+    expect(
+      screen.getByText("世代居住于此的人们守着依山傍水的土地。"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("春耕播种，夏雨除草，秋收屯粮"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("People who have lived here for generations guard their land."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Spring plowing and sowing, summer weeding"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("实时尾巴")).toBeInTheDocument();
+    expect(screen.getByText("临时译文")).toBeInTheDocument();
+    expect(screen.queryByText("已确认")).not.toBeInTheDocument();
+    expect(screen.queryByText("正在识别")).not.toBeInTheDocument();
+  });
+
   it("prompts the user to speak while realtime ASR awaits a semantic unit", () => {
     realtimeState.status = "running";
     realtimeState.hasStarted = true;
@@ -220,7 +268,7 @@ describe("workspace", () => {
       vi.advanceTimersByTime(900);
     });
     expect(screen.getByText("欢迎使用语流同传")).toBeInTheDocument();
-    expect(screen.getByText("正在识别")).toBeInTheDocument();
+    expect(screen.getByText("实时尾巴")).toBeInTheDocument();
 
     act(() => {
       vi.advanceTimersByTime(900);
@@ -233,7 +281,7 @@ describe("workspace", () => {
         "Welcome to LingoFlow. We are establishing the realtime voice link.",
       ),
     ).toBeInTheDocument();
-    expect(screen.getByText("已确认")).toBeInTheDocument();
+    expect(screen.queryByText("实时尾巴")).not.toBeInTheDocument();
   });
 });
 
