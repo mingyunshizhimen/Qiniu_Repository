@@ -50,6 +50,11 @@ class RealtimeASRPipeline:
         self._segmenter = SemanticSegmenter()
         self._pending_segment_trace_id: str | None = None
         self._playback_tasks: set[asyncio.Task[None]] = set()
+        self._preview_translation_tasks: set[asyncio.Task[None]] = set()
+        self._final_translation_tasks: set[asyncio.Task[None]] = set()
+        self._final_translation_lock = asyncio.Lock()
+        self._preview_translation_revision = 0
+        self._last_partial_translation_text = ""
 
     async def handle(self, command: ClientCommand) -> list[ServerEvent]:
         if command.type == "audio.append":
@@ -69,6 +74,8 @@ class RealtimeASRPipeline:
                 self._cancel_playback_tasks()
 
         if command.type == "session.start":
+            self._cancel_preview_translation_tasks()
+            self._cancel_final_translation_tasks()
             self._source_language = str(
                 command.payload.get("source_language", "zh-CN")
             ).strip() or "zh-CN"
@@ -98,12 +105,16 @@ class RealtimeASRPipeline:
                 transcript_events,
                 force_flush=True,
             )
+            self._cancel_preview_translation_tasks()
+            await self._wait_for_final_translation_tasks()
             self._cancel_playback_tasks()
             return semantic_events + events
 
         return await self._semantic_translation_events(events)
 
     async def close(self) -> None:
+        self._cancel_preview_translation_tasks()
+        self._cancel_final_translation_tasks()
         self._cancel_playback_tasks()
         if self._provider_initialized and not self._provider_finalized:
             await self._finalize_provider()
@@ -211,6 +222,22 @@ class RealtimeASRPipeline:
         for event in transcript_events:
             events.append(event)
             if event.type != "transcript.final":
+                if event.type == "transcript.partial":
+                    partial_text = str(event.payload.get("text", "")).strip()
+                    if partial_text and partial_text != self._last_partial_translation_text:
+                        if self._event_sink is None:
+                            preview_event = await self._translate_preview_event(
+                                event,
+                                partial_text,
+                            )
+                            if preview_event is not None:
+                                events.append(preview_event)
+                        else:
+                            self._schedule_preview_translation_event(
+                                event,
+                                partial_text,
+                            )
+                        self._last_partial_translation_text = partial_text
                 continue
 
             text = str(event.payload.get("text", "")).strip()
@@ -226,6 +253,9 @@ class RealtimeASRPipeline:
                 await self._emit_semantic_units(
                     semantic_units,
                     event.trace_id,
+                    publish_translation_in_background=(
+                        self._event_sink is not None and not force_flush
+                    ),
                 )
             )
 
@@ -235,6 +265,7 @@ class RealtimeASRPipeline:
                 await self._emit_semantic_units(
                     self._segmenter.flush(),
                     flush_trace_id,
+                    publish_translation_in_background=False,
                 )
             )
 
@@ -247,6 +278,7 @@ class RealtimeASRPipeline:
         self,
         semantic_units: list[str],
         trace_id: str,
+        publish_translation_in_background: bool = False,
     ) -> list[ServerEvent]:
         events: list[ServerEvent] = []
         for semantic_unit in semantic_units:
@@ -266,34 +298,25 @@ class RealtimeASRPipeline:
             )
             events.append(semantic_event)
 
+            if publish_translation_in_background:
+                self._cancel_preview_translation_tasks()
+                self._schedule_final_translation_event(
+                    semantic_event,
+                    emitted_text,
+                )
+                continue
+
             translated_event = await self._translate_event(
                 semantic_event,
                 emitted_text,
             )
             if translated_event is not None:
-                events.append(translated_event)
-                self._confirmed_transcripts.append(emitted_text)
-
-                if translated_event.type == "translation.final":
-                    logger.info(
-                        "Translation finalized for session %s trace=%s playback=%s text=%s",
-                        self._session.session_id,
-                        translated_event.trace_id,
-                        self._session.speech_playback_enabled,
-                        str(translated_event.payload.get("text", "")).strip()[:120],
+                events.extend(
+                    await self._complete_final_translation(
+                        translated_event,
+                        emitted_text,
                     )
-                    if self._event_sink is None:
-                        events.extend(
-                            await self._playback_events(
-                                translated_event,
-                                emitted_text,
-                            )
-                        )
-                    else:
-                        self._schedule_playback_events(
-                            translated_event,
-                            emitted_text,
-                        )
+                )
 
         return events
 
@@ -346,6 +369,202 @@ class RealtimeASRPipeline:
                 ],
             },
         )
+
+    async def _translate_preview_event(
+        self,
+        transcript_event: ServerEvent,
+        text: str,
+    ) -> ServerEvent | None:
+        glossary_matches = self._glossary_service.match_terms(text)
+        glossary_constraints = [
+            GlossaryConstraint(
+                source_term=term.source_term,
+                target_term=term.target_term,
+                start_index=start_index,
+            )
+            for term, start_index in glossary_matches
+        ]
+        try:
+            result: TranslationResult = await self._translation_provider.translate(
+                TranslationRequest(
+                    text=text,
+                    source_language=self._source_language,
+                    target_language=self._target_language,
+                    context=self._confirmed_transcripts[-5:],
+                    glossary_terms=glossary_constraints,
+                )
+            )
+        except Exception as exc:
+            logger.debug(
+                "Preview translation failed for session %s trace=%s: %s",
+                self._session.session_id,
+                transcript_event.trace_id,
+                exc,
+            )
+            return None
+
+        return self._session.event(
+            event_type="translation.partial",
+            trace_id=transcript_event.trace_id,
+            payload={
+                "text": result.translated_text,
+                "source": "translation",
+                "provider": result.provider,
+                "source_text": result.source_text,
+                "term_hits": [
+                    {
+                        "source_term": constraint.source_term,
+                        "target_term": constraint.target_term,
+                        "start_index": constraint.start_index,
+                    }
+                    for constraint in glossary_constraints
+                ],
+            },
+        )
+
+    async def _complete_final_translation(
+        self,
+        translated_event: ServerEvent,
+        source_text: str,
+    ) -> list[ServerEvent]:
+        self._confirmed_transcripts.append(source_text)
+        self._preview_translation_revision = 0
+        self._last_partial_translation_text = ""
+
+        logger.info(
+            "Translation finalized for session %s trace=%s playback=%s text=%s",
+            self._session.session_id,
+            translated_event.trace_id,
+            self._session.speech_playback_enabled,
+            str(translated_event.payload.get("text", "")).strip()[:120],
+        )
+
+        events = [translated_event]
+        if self._event_sink is None:
+            events.extend(
+                await self._playback_events(
+                    translated_event,
+                    source_text,
+                )
+            )
+        else:
+            self._schedule_playback_events(
+                translated_event,
+                source_text,
+            )
+        return events
+
+    def _schedule_final_translation_event(
+        self,
+        semantic_event: ServerEvent,
+        text: str,
+    ) -> None:
+        task = asyncio.create_task(
+            self._publish_final_translation_event(
+                semantic_event,
+                text,
+            )
+        )
+        self._final_translation_tasks.add(task)
+        task.add_done_callback(self._final_translation_tasks.discard)
+
+    async def _publish_final_translation_event(
+        self,
+        semantic_event: ServerEvent,
+        text: str,
+    ) -> None:
+        if self._event_sink is None:
+            return
+
+        try:
+            async with self._final_translation_lock:
+                translated_event = await self._translate_event(
+                    semantic_event,
+                    text,
+                )
+                if translated_event is None:
+                    return
+                events = await self._complete_final_translation(
+                    translated_event,
+                    text,
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning(
+                "Async final translation failed for session %s trace=%s: %s",
+                self._session.session_id,
+                semantic_event.trace_id,
+                exc,
+            )
+            events = [
+                self._error_event(
+                    "translation_failed",
+                    str(exc),
+                    semantic_event.trace_id,
+                )
+            ]
+
+        for event in events:
+            await self._event_sink(event)
+
+    def _schedule_preview_translation_event(
+        self,
+        transcript_event: ServerEvent,
+        text: str,
+    ) -> None:
+        self._cancel_preview_translation_tasks()
+        self._preview_translation_revision += 1
+        revision = self._preview_translation_revision
+        task = asyncio.create_task(
+            self._publish_preview_translation_event(
+                transcript_event,
+                text,
+                revision,
+            )
+        )
+        self._preview_translation_tasks.add(task)
+        task.add_done_callback(self._preview_translation_tasks.discard)
+
+    async def _publish_preview_translation_event(
+        self,
+        transcript_event: ServerEvent,
+        text: str,
+        revision: int,
+    ) -> None:
+        if self._event_sink is None:
+            return
+
+        try:
+            await asyncio.sleep(0.15)
+            preview_event = await self._translate_preview_event(
+                transcript_event,
+                text,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.debug(
+                "Preview translation task failed for session %s trace=%s: %s",
+                self._session.session_id,
+                transcript_event.trace_id,
+                exc,
+            )
+            return
+
+        if preview_event is None:
+            return
+        if revision != self._preview_translation_revision:
+            logger.debug(
+                "Discarding stale preview translation for session %s trace=%s revision=%s current=%s",
+                self._session.session_id,
+                transcript_event.trace_id,
+                revision,
+                self._preview_translation_revision,
+            )
+            return
+
+        await self._event_sink(preview_event)
 
     async def _playback_events(
         self,
@@ -498,6 +717,22 @@ class RealtimeASRPipeline:
         for task in list(self._playback_tasks):
             task.cancel()
         self._playback_tasks.clear()
+
+    def _cancel_preview_translation_tasks(self) -> None:
+        for task in list(self._preview_translation_tasks):
+            task.cancel()
+        self._preview_translation_tasks.clear()
+
+    def _cancel_final_translation_tasks(self) -> None:
+        for task in list(self._final_translation_tasks):
+            task.cancel()
+        self._final_translation_tasks.clear()
+
+    async def _wait_for_final_translation_tasks(self) -> None:
+        tasks = list(self._final_translation_tasks)
+        if not tasks:
+            return
+        await asyncio.gather(*tasks, return_exceptions=True)
 
     def _error_event(
         self,

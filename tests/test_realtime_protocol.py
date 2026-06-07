@@ -56,6 +56,19 @@ class FakeASRProvider(ASRProvider):
         return []
 
 
+class PartialOnlyASRProvider(FakeASRProvider):
+    async def send_audio(self, chunk: ASRAudioChunk) -> list[ASRResult]:
+        self.chunks.append(chunk)
+        return [
+            ASRResult(
+                text="live fragment",
+                transcript_type=TranscriptType.PARTIAL,
+                is_final=False,
+                provider="fake",
+            )
+        ]
+
+
 class FakeTranslationProvider(TranslationProvider):
     def __init__(self) -> None:
         self.requests: list[TranslationRequest] = []
@@ -157,22 +170,25 @@ def test_audio_pipeline_emits_semantic_unit_and_translation_after_final_transcri
                         },
                     )
                 )
-                partial = websocket.receive_json()
-                transcript = websocket.receive_json()
-                semantic_unit = websocket.receive_json()
-                translation = websocket.receive_json()
+                events = [websocket.receive_json() for _ in range(4)]
     finally:
         app.dependency_overrides.clear()
 
-    assert partial["type"] == "transcript.partial"
-    assert transcript["type"] == "transcript.final"
-    assert semantic_unit["type"] == "semantic_unit.final"
+    event_types = [event["type"] for event in events]
+
+    assert event_types[0] == "transcript.partial"
+    assert "transcript.final" in event_types
+    assert "semantic_unit.final" in event_types
+    assert "translation.final" in event_types
+
+    semantic_unit = next(event for event in events if event["type"] == "semantic_unit.final")
+    translation = next(event for event in events if event["type"] == "translation.final")
+
     assert semantic_unit["payload"] == {
         "text": "Complete semantic unit.",
         "source": "semantic",
         "provider": "heuristic",
     }
-    assert translation["type"] == "translation.final"
     assert translation["payload"] == {
         "text": "EN: Complete semantic unit.",
         "source": "translation",
@@ -238,31 +254,31 @@ def test_playback_enabled_emits_tts_audio_events() -> None:
                         },
                     )
                 )
-                partial = websocket.receive_json()
-                transcript = websocket.receive_json()
-                semantic_unit = websocket.receive_json()
-                translation = websocket.receive_json()
-                started = websocket.receive_json()
-                delta_1 = websocket.receive_json()
-                delta_2 = websocket.receive_json()
-                finished = websocket.receive_json()
+                events = [websocket.receive_json() for _ in range(8)]
     finally:
         app.dependency_overrides.clear()
 
+    event_types = [event["type"] for event in events]
+
     assert playback_state["type"] == "speech.playback.state"
     assert playback_state["payload"] == {"enabled": True}
-    assert partial["type"] == "transcript.partial"
-    assert transcript["type"] == "transcript.final"
-    assert semantic_unit["type"] == "semantic_unit.final"
-    assert translation["type"] == "translation.final"
-    assert started["type"] == "speech.playback.started"
-    assert delta_1["type"] == "tts.audio.delta"
-    assert delta_2["type"] == "tts.audio.delta"
-    assert finished["type"] == "speech.playback.finished"
-    assert delta_1["payload"]["audio"] == base64.b64encode(b"\x01\x02").decode(
+    assert event_types[0] == "transcript.partial"
+    assert "transcript.final" in event_types
+    assert "semantic_unit.final" in event_types
+    assert "translation.final" in event_types
+    assert "speech.playback.started" in event_types
+    assert event_types.count("tts.audio.delta") == 2
+    assert "speech.playback.finished" in event_types
+
+    translation = next(event for event in events if event["type"] == "translation.final")
+    started = next(event for event in events if event["type"] == "speech.playback.started")
+    delta_events = [event for event in events if event["type"] == "tts.audio.delta"]
+    finished = next(event for event in events if event["type"] == "speech.playback.finished")
+
+    assert delta_events[0]["payload"]["audio"] == base64.b64encode(b"\x01\x02").decode(
         "ascii"
     )
-    assert delta_2["payload"]["audio"] == base64.b64encode(b"\x03\x04").decode(
+    assert delta_events[1]["payload"]["audio"] == base64.b64encode(b"\x03\x04").decode(
         "ascii"
     )
     assert tts_provider.requests == [
@@ -320,11 +336,55 @@ def test_playback_events_do_not_block_translation_delivery() -> None:
         "transcript.partial",
         "transcript.final",
         "semantic_unit.final",
-        "translation.final",
     ]
+    assert "translation.final" in emitted_events
     assert "speech.playback.started" in emitted_events
     assert "tts.audio.delta" in emitted_events
     assert "speech.playback.finished" in emitted_events
+
+def test_preview_translation_is_published_asynchronously_with_event_sink() -> None:
+    asr_provider = PartialOnlyASRProvider()
+    translation_provider = FakeTranslationProvider()
+    emitted_events: list[str] = []
+
+    async def enqueue_event(event):
+        emitted_events.append(event.type)
+
+    from backend.app.realtime.pipeline import RealtimeASRPipeline
+    from backend.app.realtime.session import RealtimeSession
+
+    async def run_pipeline() -> list[str]:
+        session = RealtimeSession("audio-demo")
+        pipeline = RealtimeASRPipeline(
+            session,
+            asr_provider,
+            translation_provider,
+            FakeTTSProvider(),
+            event_sink=enqueue_event,
+        )
+
+        await pipeline.handle(command("session.start", 1))
+        events = await pipeline.handle(
+            command(
+                "audio.append",
+                2,
+                {
+                    "audio": base64.b64encode(b"\x01\x02").decode("ascii"),
+                    "format": "pcm",
+                    "sample_rate": 16000,
+                },
+            )
+        )
+        await asyncio.sleep(0.2)
+        await pipeline.close()
+        return [event.type for event in events]
+
+    event_types = asyncio.run(run_pipeline())
+
+    assert event_types == [
+        "transcript.partial",
+    ]
+    assert "translation.partial" in emitted_events
 
 
 def test_incomplete_sentence_is_flushed_on_stop() -> None:

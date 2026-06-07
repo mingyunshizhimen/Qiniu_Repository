@@ -148,9 +148,16 @@ describe("workspace", () => {
     expect(screen.getByText("Idle")).toBeInTheDocument();
   });
 
-  it("shows semantic units, translations, and term hits when the live session is active", () => {
+  it("shows live ASR, translations, and term hits when the session is active", () => {
     realtimeState.status = "running";
     realtimeState.hasStarted = true;
+    realtimeState.segments = [
+      {
+        id: "final-1",
+        text: "Complete semantic unit.",
+        status: "final",
+      },
+    ];
     realtimeState.semanticSegments = [
       {
         id: "final-1",

@@ -384,21 +384,14 @@ function InterpreterPage() {
     realtime.translationSegments.length > 0;
 
   const displayedSourceSegments =
-    realtime.semanticSegments.length > 0
-      ? realtime.semanticSegments.map((segment) => ({
+    showRealtime
+      ? realtime.segments.map((segment) => ({
           id: segment.id,
           sourceText: segment.text,
           translatedText: "",
           status: segment.status,
         }))
-      : showRealtime
-        ? realtime.segments.map((segment) => ({
-            id: segment.id,
-            sourceText: segment.text,
-            translatedText: "",
-            status: segment.status,
-          }))
-        : session.segments;
+      : session.segments;
 
   const displayedTranslationSegments = showRealtime
     ? realtime.translationSegments.map((segment) => ({

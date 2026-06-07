@@ -5,32 +5,60 @@ import { mergeTranscript, type RealtimeTranscriptSegment } from "./useRealtimeAS
 describe("mergeTranscript", () => {
   it("replaces the live partial and preserves confirmed segments", () => {
     const firstPartial = mergeTranscript([], {
-      text: "你好",
+      text: "hello",
       status: "partial",
     });
     const updatedPartial = mergeTranscript(firstPartial, {
-      text: "你好，七牛",
+      text: "hello world",
       status: "partial",
     });
     const confirmed = mergeTranscript(updatedPartial, {
-      text: "你好，七牛云。",
+      text: "hello world.",
       status: "final",
     });
     const nextPartial = mergeTranscript(confirmed, {
-      text: "我们正在",
+      text: "we are",
       status: "partial",
     });
 
     expect(nextPartial).toEqual<RealtimeTranscriptSegment[]>([
       {
         id: "final-1",
-        text: "你好，七牛云。",
+        text: "hello world.",
         status: "final",
       },
       {
         id: "partial-live",
-        text: "我们正在",
+        text: "we are",
         status: "partial",
+      },
+    ]);
+  });
+
+  it("appends the next final without deleting confirmed history", () => {
+    const firstFinal = mergeTranscript([], {
+      text: "first sentence.",
+      status: "final",
+    });
+    const liveSecond = mergeTranscript(firstFinal, {
+      text: "second",
+      status: "partial",
+    });
+    const secondFinal = mergeTranscript(liveSecond, {
+      text: "second sentence.",
+      status: "final",
+    });
+
+    expect(secondFinal).toEqual<RealtimeTranscriptSegment[]>([
+      {
+        id: "final-1",
+        text: "first sentence.",
+        status: "final",
+      },
+      {
+        id: "final-2",
+        text: "second sentence.",
+        status: "final",
       },
     ]);
   });
