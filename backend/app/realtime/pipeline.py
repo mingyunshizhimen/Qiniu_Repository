@@ -326,6 +326,12 @@ class RealtimeASRPipeline:
         text: str,
     ) -> ServerEvent | None:
         glossary_matches = self._glossary_service.match_terms(text)
+        logger.info(
+            "术语匹配: text=%s, 匹配数=%s, 术语表大小=%s",
+            text[:50],
+            len(glossary_matches),
+            len(self._glossary_service.list_terms()),
+        )
         glossary_constraints = [
             GlossaryConstraint(
                 source_term=term.source_term,

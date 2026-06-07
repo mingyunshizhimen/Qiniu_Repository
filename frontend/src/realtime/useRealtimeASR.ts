@@ -166,7 +166,20 @@ export function useRealtimeASR(
           mergeTranscript(current, translation),
         );
         if (translation.status === "final") {
-          setTermHits(translation.termHits);
+          setTermHits((current) => {
+            if (translation.termHits.length === 0) {
+              return current;
+            }
+            // 累积命中记录，按 sourceTerm+startIndex 去重
+            const next = [...current];
+            for (const hit of translation.termHits) {
+              const key = `${hit.sourceTerm}-${hit.startIndex}`;
+              if (!next.some((h) => `${h.sourceTerm}-${h.startIndex}` === key)) {
+                next.push(hit);
+              }
+            }
+            return next;
+          });
         }
       },
       onSessionState: handleSessionState,
