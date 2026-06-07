@@ -1,6 +1,7 @@
 import logging
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from backend.app.api.glossary import router as glossary_router
 from backend.app.api.health import router as health_router
@@ -26,6 +27,13 @@ settings = get_settings()
 app = FastAPI(
     title="Qiniu AI Interpreter API",
     version=settings.app_version,
+)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 app.include_router(glossary_router, prefix="/api/v1")
 app.include_router(health_router, prefix="/api/v1")
