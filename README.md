@@ -1,42 +1,56 @@
 # Qiniu AI Interpreter
 
-面向技术会议的 AI 实时同声传译助手。项目计划通过实时语音识别、术语感知的上下文 Agent 和双语字幕，改善专业术语误识别、译名不一致及翻译过程不可解释的问题。
+面向真实会议场景的 AI 同声传译助手。
 
-当前 PR 建立可运行的 Python 后端基线，并提供健康检查接口。没有配置百炼 API Key 时，服务自动使用 Mock Provider，便于评委直接启动和验证。
+项目围绕一条可本地复现的主链路展开：
 
-## 当前功能
-
-- FastAPI 应用入口。
-- 版本化健康检查接口：`GET /api/v1/health`。
-- 实时会话 WebSocket：`WS /api/v1/ws/sessions/{session_id}`。
-- 会话开始、暂停、恢复和结束状态机。
-- 文本降级输入生成临时字幕与确认字幕。
-- 非法状态、错误消息和重复序号的结构化错误响应。
-- DashScope Qwen-ASR Realtime WebSocket Provider。
-- 支持 PCM 音频分片发送、临时识别结果和最终识别结果解析。
-- 实时会话与 ASR Provider 的完整音频识别管线。
-- 会话停止或 WebSocket 断开时自动释放 ASR 资源。
-- 基于 `pydantic-settings` 的环境配置。
-- 无 API Key 时自动启用 Mock Provider。
-- 健康检查与实时协议自动化测试。
-
-健康检查响应示例：
-
-```json
-{
-  "status": "ok",
-  "service": "qiniu-ai-interpreter",
-  "version": "0.1.0",
-  "ai_provider": "mock"
-}
+```text
+麦克风采集
+→ 音频预处理
+→ WebSocket 传输
+→ 流式 ASR
+→ 语义断句
+→ 实时翻译
+→ 连续流字幕
+→ 可选语音播报
+→ 术语管理与命中展示
+→ 术语相似度纠错
 ```
 
-## 环境要求
+当前版本已经可以在本地直接运行，默认不依赖 Redis、MySQL 或 Docker；如果不配置 `DASHSCOPE_API_KEY`，系统会自动走 Mock 兜底，仍然可以打开工作台演示。
 
-- Python 3.12+
-- Node.js 24 LTS（前端）
+## 当前能力
+
+- 首页与同传工作台
+- 浏览器麦克风采集，输出 16kHz 单声道 PCM16
+- FastAPI 健康检查与 WebSocket 会话协议
+- DashScope 实时 ASR 接入
+- 语义断句与连续流字幕展示
+- 实时翻译，支持 `translation.partial` 和 `translation.final`
+- 语音播报开关
+- 播报引擎选择
+  - 浏览器播报（推荐，主链路更轻）
+  - 后端高质量播报（音色更自然）
+- 独立术语库页面 `/glossary`
+- 术语命中展示
+- 术语增强翻译
+- 术语相似度纠错
+  - 发现命中术语的近似错误后，自动推送 `transcript.corrected`
+  - 前端会高亮修正后的片段
+
+## Demo 视频
+
+[https://www.bilibili.com/video/BV1RDE86xEJd](https://www.bilibili.com/video/BV1RDE86xEJd)
+
+## 页面路由
+
+- `/`：产品首页
+- `/interpreter`：实时同传工作台
+- `/glossary`：独立术语库页面
 
 ## 本地启动
+
+### 后端
 
 ```powershell
 python -m venv .venv
@@ -46,18 +60,13 @@ Copy-Item .env.example .env
 python -m uvicorn backend.app.main:app --reload
 ```
 
-启动后可访问：
+如需真实 ASR、翻译和后端 TTS，请在本地 `.env` 中配置：
 
-- 健康检查：<http://127.0.0.1:8000/api/v1/health>
-- OpenAPI 文档：<http://127.0.0.1:8000/docs>
+```env
+DASHSCOPE_API_KEY=你的百炼APIKey
+```
 
-需要启用百炼服务时，在本地 `.env` 中填写 `DASHSCOPE_API_KEY`。请勿提交真实密钥。
-
-当前阶段已完成 DashScope 实时 ASR Provider 与实时会话协议的音频管线集成。
-
-## 前端演示
-
-前端使用 React、TypeScript 和 Vite，当前提供产品首页、Mock 同传工作台和真实浏览器 ASR 模式。真实模式会采集麦克风音频，将其转换为 16kHz 单声道 PCM16，并通过 WebSocket 发送到后端实时 ASR 管线。
+### 前端
 
 ```powershell
 cd frontend
@@ -65,167 +74,49 @@ npm install
 npm run dev
 ```
 
-启动后访问 <http://127.0.0.1:5173>。页面路由：
+然后访问：
 
-- `/`：产品首页与快速同传入口。
-- `/interpreter`：Mock 同传工作台。
+- <http://127.0.0.1:5173>
+- <http://127.0.0.1:5173/interpreter>
+- <http://127.0.0.1:5173/glossary>
 
-需要体验真实语音识别时：
+## 实时演示建议
 
-1. 在根目录 `.env` 中配置 `DASHSCOPE_API_KEY`。
-2. 启动 FastAPI 后端与 Vite 前端。
-3. 打开 `/interpreter`，点击 `Start realtime ASR` 并允许麦克风权限。
+1. 打开 `/interpreter`。
+2. 点击 `Start realtime ASR`。
+3. 允许麦克风权限。
+4. 说一段完整话术，观察原文、译文和连续流字幕。
+5. 在语音播报卡片中切换播报引擎，比较浏览器播报和后端播报。
+6. 打开 `/glossary` 增加一个术语，再回到工作台验证术语命中。
 
-未配置 API Key 时后端使用 Mock ASR，不会产生真实字幕，但页面的 Mock 演示仍可独立运行。
-
-当前工作台还提供了一个“语音播报”开关：
-
-- 关闭时，页面只展示原文与译文字幕。
-- 打开时，确认译文会进入播报队列。
-- 没有额外配置时，默认使用浏览器语音合成兜底。
-- 后端百炼 TTS 仍保留在后续扩展设计中，不影响当前可运行演示。
-
-构建与前端测试：
+## 测试与构建
 
 ```powershell
 cd frontend
 npm run test
 npm run build
-```
 
-## 实时协议
-
-连接地址：
-
-```text
-ws://127.0.0.1:8000/api/v1/ws/sessions/demo-session
-```
-
-客户端命令统一包含：
-
-```json
-{
-  "version": "1.0",
-  "type": "session.start",
-  "sequence": 1,
-  "payload": {}
-}
-```
-
-当前支持的命令：
-
-- `session.start`
-- `session.pause`
-- `session.resume`
-- `session.stop`
-- `audio.append`
-- `text.submit`
-
-服务端事件统一包含 `version`、`type`、`session_id`、`trace_id`、`sequence`、`timestamp` 和 `payload`。`text.submit` 在活跃会话中依次产生 `transcript.partial` 与 `transcript.final`，用于模拟未来实时 ASR 的临时和确认结果。
-
-`audio.append` 在活跃会话中接收 Base64 编码的音频分片：
-
-```json
-{
-  "version": "1.0",
-  "type": "audio.append",
-  "sequence": 2,
-  "payload": {
-    "audio": "BASE64_PCM_AUDIO",
-    "format": "pcm",
-    "sample_rate": 16000
-  }
-}
-```
-
-识别结果转换为 `transcript.partial` 或 `transcript.final` 事件。当前 DashScope Qwen-ASR Realtime 管线要求单声道、16-bit、16kHz PCM 音频。
-
-启动服务后，可在浏览器开发者工具 Console 中运行：
-
-```javascript
-const ws = new WebSocket(
-  "ws://127.0.0.1:8000/api/v1/ws/sessions/browser-demo"
-);
-
-ws.onmessage = (event) => console.log(JSON.parse(event.data));
-
-ws.onopen = () => {
-  ws.send(JSON.stringify({
-    version: "1.0",
-    type: "session.start",
-    sequence: 1,
-    payload: {
-      source_language: "zh-CN",
-      target_language: "en-US"
-    }
-  }));
-
-  ws.send(JSON.stringify({
-    version: "1.0",
-    type: "text.submit",
-    sequence: 2,
-    payload: {
-      text: "我们使用七牛云对象存储。"
-    }
-  }));
-};
-```
-
-## 运行测试
-
-```powershell
+cd ..
 python -m pytest
-```
-
-## 项目结构
-
-```text
-backend/
-  app/
-    api/        # HTTP API
-    core/       # 配置与基础设施
-    realtime/   # 会话状态机、ASR 管线与实时事件模型
-    main.py     # FastAPI 应用入口
-frontend/
-  src/          # React 页面、Mock 字幕事件与交互测试
-docs/
-  superpowers/
-    specs/      # 架构设计
-tests/          # 自动化测试
 ```
 
 ## 第三方依赖
 
-- [FastAPI](https://fastapi.tiangolo.com/)：Web API 框架。
-- [Uvicorn](https://www.uvicorn.org/)：ASGI 开发服务器。
-- [Pydantic Settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/)：环境配置管理。
-- [HTTPX](https://www.python-httpx.org/)：FastAPI 测试客户端依赖。
-- [websockets](https://websockets.readthedocs.io/)：DashScope 实时 ASR WebSocket 客户端。
-- [pytest](https://docs.pytest.org/)：自动化测试框架。
-- [React](https://react.dev/)：演示页面组件与交互状态。
-- [Vite](https://vite.dev/)：前端开发服务器与构建工具。
-- [Vitest](https://vitest.dev/)：前端组件和交互测试。
-
-完整版本约束见 [`pyproject.toml`](pyproject.toml)。
+- FastAPI
+- Uvicorn
+- Pydantic Settings
+- HTTPX
+- websockets
+- pytest
+- React
+- React Router
+- Vite
+- Vitest
+- Testing Library
 
 ## 原创说明
 
-本仓库中的产品设计、实时事件管线、Provider 扩展边界、健康检查实现与测试均为本次参赛作品原创。当前代码未复用个人历史项目代码。
+本仓库中的产品设计、实时事件协议、工作台交互、连续流字幕呈现、术语库交互、播报引擎选择、术语相似度纠错与测试用例，均为本项目原创实现。
 
-后续接入的 FastAPI、百炼 DashScope SDK 等第三方库仅作为基础依赖使用，其名称、用途和版本会持续记录在 README 与依赖清单中。
-
-## 设计文档
-
-- [AI 同声传译助手设计](docs/superpowers/specs/2026-06-05-ai-simultaneous-interpreter-design.md)
-
-## 07 semantic segmentation verification
-
-Manual test checklist for the new semantic unit layer:
-
-1. Start backend with `python -m uvicorn backend.app.main:app --reload`.
-2. Start frontend with `cd frontend && npm run dev`.
-3. Open `/interpreter` and click `Start realtime ASR`.
-4. Speak one complete sentence with a clear pause or punctuation boundary.
-5. Success: the websocket emits `semantic_unit.final` before `translation.final`.
-6. Success: the source panel shows a complete semantic unit instead of tiny fragments.
-7. Success: the translation panel updates only after the semantic unit is finalized.
+后续接入的 FastAPI、DashScope、React、Vite 等第三方框架仅作为基础依赖使用，具体能力边界、调用方式与降级策略均在项目内进行了重新设计。
+## 原创说明
