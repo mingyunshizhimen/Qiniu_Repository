@@ -68,6 +68,17 @@ interface RealtimeASRClientOptions {
   }) => void;
   onSessionState?: (state: RealtimeSessionState) => void;
   onError?: (message: string) => void;
+  onCorrection?: (correction: {
+    original: string;
+    corrected: string;
+    strategy: string;
+    corrections: Array<{
+      source_term: string;
+      target_term: string;
+      original_fragment: string;
+      edit_distance: number;
+    }>;
+  }) => void;
 }
 
 const OPEN_READY_STATE = 1;
@@ -418,6 +429,30 @@ export class RealtimeASRClient {
           text,
           sourceText,
           message,
+        });
+      }
+      return;
+    }
+
+    if (event.type === "transcript.corrected") {
+      const original = event.payload.original;
+      const corrected = event.payload.corrected;
+      const strategy = event.payload.strategy;
+      const corrections = Array.isArray(event.payload.corrections)
+        ? event.payload.corrections.map((c: Record<string, unknown>) => ({
+            source_term: typeof c.source_term === "string" ? c.source_term : "",
+            target_term: typeof c.target_term === "string" ? c.target_term : "",
+            original_fragment: typeof c.original_fragment === "string" ? c.original_fragment : "",
+            edit_distance: typeof c.edit_distance === "number" ? c.edit_distance : 0,
+          }))
+        : [];
+
+      if (typeof original === "string" && typeof corrected === "string" && original !== corrected) {
+        this.options.onCorrection?.({
+          original,
+          corrected,
+          strategy: typeof strategy === "string" ? strategy : "",
+          corrections,
         });
       }
       return;

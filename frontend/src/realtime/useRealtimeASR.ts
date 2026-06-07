@@ -23,6 +23,16 @@ export interface RealtimeTranscriptSegment {
   id: string;
   text: string;
   status: TranscriptStatus;
+  /** 纠错高亮：如果此 segment 被纠错过，这里存储纠正后的文字（用于渲染高亮） */
+  correctedHighlight?: string;
+}
+
+export interface TranscriptCorrection {
+  id: string;
+  original: string;
+  corrected: string;
+  strategy: string;
+  timestamp: number;
 }
 
 export interface RealtimeASRState {
@@ -63,6 +73,17 @@ export interface RealtimeASROptions {
     text: string;
     sourceText: string;
     message: string;
+  }) => void;
+  onCorrection?: (correction: {
+    original: string;
+    corrected: string;
+    strategy: string;
+    corrections: Array<{
+      source_term: string;
+      target_term: string;
+      original_fragment: string;
+      edit_distance: number;
+    }>;
   }) => void;
 }
 
@@ -118,6 +139,7 @@ export function useRealtimeASR(
   >([]);
   const [termHits, setTermHits] = useState<RealtimeTermHit[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [corrections, setCorrections] = useState<TranscriptCorrection[]>([]);
   const speechPlaybackEnabledRef = useRef(false);
 
   const handleFrame = useCallback(
@@ -187,6 +209,53 @@ export function useRealtimeASR(
       onSpeechPlaybackAudio: options.onSpeechPlaybackAudio,
       onSpeechPlaybackFinished: options.onSpeechPlaybackFinished,
       onSpeechPlaybackFailed: options.onSpeechPlaybackFailed,
+      onCorrection: (correction) => {
+        const newCorrection: TranscriptCorrection = {
+          id: `correction-${Date.now()}`,
+          original: correction.original,
+          corrected: correction.corrected,
+          strategy: correction.strategy,
+          timestamp: Date.now(),
+        };
+        setCorrections((current) => [...current, newCorrection]);
+
+        // 原文纠错：替换文字 + 标记高亮
+        setSegments((currentSegments) =>
+          currentSegments.map((segment) => {
+            if (segment.status === "final" && segment.text === correction.original) {
+              return { ...segment, text: correction.corrected, correctedHighlight: correction.corrected };
+            }
+            return segment;
+          }),
+        );
+
+        // 译文联动修正：用术语表的 target_term 替换对应译文
+        if (correction.corrections && correction.corrections.length > 0) {
+          const targetTerm = correction.corrections[0].target_term;
+          if (targetTerm) {
+            setTranslationSegments((currentSegments) => {
+              // 找到最后一个已完成的 final 翻译 segment（就是刚翻译完的那个）
+              const lastFinalIdx = [...currentSegments]
+                .map((s, i) => (s.status === "final" ? i : -1))
+                .filter((i) => i >= 0)
+                .pop();
+
+              if (lastFinalIdx === undefined || lastFinalIdx < 0) return currentSegments;
+
+              return currentSegments.map((segment, idx) => {
+                if (idx === lastFinalIdx) {
+                  return {
+                    ...segment,
+                    text: targetTerm,
+                    correctedHighlight: targetTerm,
+                  };
+                }
+                return segment;
+              });
+            });
+          }
+        }
+      },
       onSpeechPlaybackState: () => {
         // The workspace currently keeps the browser speech toggle as the
         // visible control. Backend playback state is available for future UI
@@ -264,6 +333,7 @@ export function useRealtimeASR(
     semanticSegments,
     translationSegments,
     termHits,
+    corrections,
     microphone,
     error,
     hasStarted: status !== "idle",

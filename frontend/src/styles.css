@@ -701,6 +701,71 @@ button {
   font-size: 12px;
 }
 
+/* ========== 纠错提示（Glossary 面板内）========== */
+.correction-inside-panel {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #ecfdf5, #f0fdf4);
+  border: 1px solid #86efac;
+  font-size: 13px;
+}
+
+.correction-icon {
+  color: #16a34a;
+  font-weight: 700;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.correction-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.correction-detail strong {
+  color: #15803d;
+  font-size: 12px;
+}
+
+.correction-diff {
+  color: #4b5563;
+  font-size: 12px;
+}
+
+.correction-diff em {
+  color: #16a34a;
+  font-style: normal;
+  font-weight: 600;
+}
+
+/* 纠错闪烁动画 — 绿色高亮闪烁 3 次 */
+@keyframes correction-pulse {
+  0% { background-color: transparent; }
+  25% { background-color: #bbf7d0; }
+  50% { background-color: transparent; }
+  75% { background-color: #bbf7d0; }
+  100% { background-color: transparent; }
+}
+
+.correction-flash {
+  animation: correction-pulse 1.2s ease-in-out;
+}
+
+/* ========== 原文/译文中的纠错文字高亮 ========== */
+.correction-text-highlight {
+  color: #15803d;
+  font-weight: 600;
+  background: linear-gradient(180deg, #bbf7d0 40%, #86efac 100%);
+  border-radius: 3px;
+  padding: 0 4px;
+  margin: 0 1px;
+}
+
 .speech-control-meta {
   display: flex;
   align-items: center;
