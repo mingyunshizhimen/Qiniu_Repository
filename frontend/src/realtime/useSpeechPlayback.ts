@@ -13,6 +13,8 @@ export type SpeechPlaybackStatus =
   | "unsupported"
   | "error";
 
+export type SpeechPlaybackEngine = "browser" | "backend";
+
 interface BackendSpeechJob {
   text: string;
   sourceText: string;
@@ -291,9 +293,13 @@ export function useSpeechPlayback(language = "en-US") {
   const audioSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const [enabled, setEnabledState] = useState(false);
+  const [engine, setEngineState] = useState<SpeechPlaybackEngine>("browser");
   const [status, setStatus] = useState<SpeechPlaybackStatus>("disabled");
   const [queueSize, setQueueSize] = useState(0);
-  const supported = supportsAudioPlayback() || supportsBrowserSpeechSynthesis();
+  const supported =
+    engine === "backend"
+      ? supportsAudioPlayback() || supportsBrowserSpeechSynthesis()
+      : supportsBrowserSpeechSynthesis();
 
   const stopAudioPlayback = useCallback(() => {
     const source = audioSourceRef.current;
@@ -537,6 +543,25 @@ export function useSpeechPlayback(language = "en-US") {
     [cancelSpeech, processQueue, supported],
   );
 
+  const setEngine = useCallback(
+    (nextEngine: SpeechPlaybackEngine) => {
+      setEngineState(nextEngine);
+      playbackGenerationRef.current += 1;
+      clearBackendPlaybackTimers();
+      queueRef.current.clear();
+      backendQueueRef.current.length = 0;
+      setQueueSize(0);
+      cancelSpeech();
+      if (!enabledRef.current) {
+        setStatus("disabled");
+        return;
+      }
+      setStatus("idle");
+      void processQueue();
+    },
+    [cancelSpeech, clearBackendPlaybackTimers, processQueue],
+  );
+
   const enqueue = useCallback(
     (text: string) => {
       queueRef.current.enqueue(text);
@@ -562,6 +587,9 @@ export function useSpeechPlayback(language = "en-US") {
   const onSpeechPlaybackStarted = useCallback(
     (payload: { text: string; sourceText: string }) => {
       if (!enabledRef.current) {
+        return;
+      }
+      if (engine !== "backend") {
         return;
       }
 
@@ -601,7 +629,7 @@ export function useSpeechPlayback(language = "en-US") {
       backendQueueRef.current.push(backendJob);
       setQueueSize(queueRef.current.size() + backendQueueRef.current.length);
     },
-    [processQueue],
+    [engine, processQueue],
   );
 
   const onSpeechPlaybackAudio = useCallback(
@@ -626,6 +654,9 @@ export function useSpeechPlayback(language = "en-US") {
       if (!job) {
         return;
       }
+      if (engine !== "backend") {
+        return;
+      }
 
       if (job.fallbackTimerId !== null) {
         window.clearTimeout(job.fallbackTimerId);
@@ -647,7 +678,7 @@ export function useSpeechPlayback(language = "en-US") {
       job.provider = payload.provider;
       setQueueSize(queueRef.current.size() + backendQueueRef.current.length);
     },
-    [],
+    [engine],
   );
 
   const onSpeechPlaybackFinished = useCallback(
@@ -667,6 +698,9 @@ export function useSpeechPlayback(language = "en-US") {
         );
 
       if (!job) {
+        return;
+      }
+      if (engine !== "backend") {
         return;
       }
 
@@ -689,7 +723,7 @@ export function useSpeechPlayback(language = "en-US") {
       setQueueSize(queueRef.current.size() + backendQueueRef.current.length);
       void processQueue();
     },
-    [processQueue],
+    [engine, processQueue],
   );
 
   const onSpeechPlaybackFailed = useCallback(
@@ -704,6 +738,9 @@ export function useSpeechPlayback(language = "en-US") {
         );
 
       if (!job) {
+        return;
+      }
+      if (engine !== "backend") {
         return;
       }
 
@@ -723,7 +760,7 @@ export function useSpeechPlayback(language = "en-US") {
       setQueueSize(queueRef.current.size() + backendQueueRef.current.length);
       void processQueue();
     },
-    [processQueue],
+    [engine, processQueue],
   );
 
   useEffect(() => {
@@ -738,7 +775,9 @@ export function useSpeechPlayback(language = "en-US") {
 
   return {
     enabled,
+    engine,
     setEnabled,
+    setEngine,
     enqueue,
     clear,
     status,

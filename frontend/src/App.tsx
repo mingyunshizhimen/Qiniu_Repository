@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, Route, Routes } from "react-router-dom";
 
 import { MicrophoneCapturePanel } from "./components/MicrophoneCapturePanel";
 import { GlossarySummaryPanel } from "./components/GlossarySummaryPanel";
 import { useRealtimeASR } from "./realtime/useRealtimeASR";
 import {
+  type SpeechPlaybackEngine,
   type SpeechPlaybackStatus,
   useSpeechPlayback,
 } from "./realtime/useSpeechPlayback";
@@ -356,7 +357,10 @@ function InterpreterPage() {
   const session = useMockInterpreter();
   const {
     enabled: speechPlaybackEnabled,
+    engine: speechPlaybackEngine,
     setEnabled: setSpeechPlaybackEnabled,
+    setEngine: setSpeechPlaybackEngine,
+    enqueue: enqueueSpeechPlayback,
     clear: clearSpeechPlayback,
     status: speechPlaybackStatus,
     queueSize: speechPlaybackQueueSize,
@@ -408,6 +412,7 @@ function InterpreterPage() {
       ? "ended"
       : session.status;
   const isActive = session.status === "running" || session.status === "paused";
+  const lastBrowserPlaybackIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (showRealtime) {
@@ -417,8 +422,41 @@ function InterpreterPage() {
   }, [clearSpeechPlayback, showRealtime]);
 
   useEffect(() => {
-    realtime.setSpeechPlaybackEnabled(speechPlaybackEnabled);
-  }, [realtime.setSpeechPlaybackEnabled, speechPlaybackEnabled]);
+    realtime.setSpeechPlaybackEnabled(
+      speechPlaybackEnabled && speechPlaybackEngine === "backend",
+    );
+  }, [
+    realtime.setSpeechPlaybackEnabled,
+    speechPlaybackEnabled,
+    speechPlaybackEngine,
+  ]);
+
+  useEffect(() => {
+    if (!speechPlaybackEnabled || speechPlaybackEngine !== "browser") {
+      lastBrowserPlaybackIdRef.current = null;
+      return;
+    }
+
+    const latestFinal = [...realtime.translationSegments]
+      .reverse()
+      .find((segment) => segment.status === "final");
+
+    if (!latestFinal) {
+      return;
+    }
+
+    if (latestFinal.id === lastBrowserPlaybackIdRef.current) {
+      return;
+    }
+
+    lastBrowserPlaybackIdRef.current = latestFinal.id;
+    enqueueSpeechPlayback(latestFinal.text);
+  }, [
+    enqueueSpeechPlayback,
+    realtime.translationSegments,
+    speechPlaybackEnabled,
+    speechPlaybackEngine,
+  ]);
 
   const elapsed = useMemo(
     () => (displayedSourceSegments.length ? "00:12" : "00:00"),
@@ -431,6 +469,11 @@ function InterpreterPage() {
     speaking: "播报中",
     unsupported: "浏览器不支持",
     error: "播报失败",
+  };
+
+  const playbackEngineLabels: Record<SpeechPlaybackEngine, string> = {
+    browser: "浏览器播报",
+    backend: "后端高质量播报",
   };
 
   const sessionStatusLabels: Record<SessionStatus, string> = {
@@ -495,17 +538,40 @@ function InterpreterPage() {
           <strong>{speechPlaybackEnabled ? "已开启" : "已关闭"}</strong>
           <p>
             {!speechPlaybackSupported
-              ? "当前浏览器不支持语音合成，仅保留字幕显示。"
+              ? "当前模式在此浏览器中不可用，仅保留字幕显示。"
               : speechPlaybackEnabled
                 ? "确认译文会进入播报队列，字幕显示不会被打断。"
                 : "开启后，确认译文会被朗读；关闭时仅保留纯文本字幕。"}
           </p>
+          <div className="speech-engine-copy">
+            <strong>播报引擎：{playbackEngineLabels[speechPlaybackEngine]}</strong>
+            <p>
+              {speechPlaybackEngine === "browser"
+                ? "推荐。主链路更轻，实时字幕更流畅，但音色和可控性相对一般。"
+                : "音色更自然，更像正式产品；当前播报开始阶段可能短暂影响实时字幕质量，几秒后通常恢复。"}
+            </p>
+          </div>
         </div>
         <div className="speech-control-meta">
           <span className={`speech-status speech-status-${speechPlaybackStatus}`}>
             {playbackStatusLabels[speechPlaybackStatus]}
           </span>
           <span className="speech-queue">队列 {speechPlaybackQueueSize}</span>
+          <label className="speech-engine-picker">
+            <span>播报引擎</span>
+            <select
+              aria-label="播报引擎"
+              value={speechPlaybackEngine}
+              onChange={(event) =>
+                setSpeechPlaybackEngine(
+                  event.target.value as SpeechPlaybackEngine,
+                )
+              }
+            >
+              <option value="browser">浏览器播报（推荐）</option>
+              <option value="backend">后端高质量播报</option>
+            </select>
+          </label>
           <button
             aria-checked={speechPlaybackEnabled}
             aria-label="语音播报开关"
@@ -518,7 +584,6 @@ function InterpreterPage() {
           </button>
         </div>
       </section>
-
       <section className="transcript-grid">
         <FlowTranscriptPanel
           title="SOURCE TRANSCRIPT"
@@ -608,3 +673,4 @@ export function AppRoutes() {
     </Routes>
   );
 }
+
