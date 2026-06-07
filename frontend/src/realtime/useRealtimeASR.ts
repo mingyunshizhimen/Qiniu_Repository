@@ -239,51 +239,6 @@ export function useRealtimeASR(
           }),
         );
 
-        // 译文联动修正：基于原文位置比例做局部替换
-        if (correction.corrections && correction.corrections.length > 0) {
-          const targetTerm = correction.corrections[0].target_term;
-          const originalFragment = correction.corrections[0].original_fragment;
-          const originalTranslation = correction.originalTranslation;
-
-          if (targetTerm && originalFragment && originalTranslation) {
-            setTranslationSegments((currentSegments) => {
-              const lastFinalIdx = [...currentSegments]
-                .map((s, i) => (s.status === "final" ? i : -1))
-                .filter((i) => i >= 0)
-                .pop();
-
-              if (lastFinalIdx === undefined || lastFinalIdx < 0)
-                return currentSegments;
-
-              return currentSegments.map((segment, idx) => {
-                if (idx === lastFinalIdx) {
-                  // 用位置比例算法：original_fragment 在原文中的位置比例
-                  // → 映射到原译文中的对应位置 → 替换为 target_term
-                  const fragStart = correction.original.indexOf(originalFragment);
-                  const fragEnd = fragStart + originalFragment.length;
-                  const ratioStart = fragStart / correction.original.length;
-                  const ratioEnd = fragEnd / correction.original.length;
-
-                  const txText = segment.text;
-                  const replaceStart = Math.floor(txText.length * ratioStart);
-                  const replaceEnd = Math.ceil(txText.length * ratioEnd);
-
-                  const correctedTx =
-                    txText.slice(0, replaceStart) +
-                    targetTerm +
-                    txText.slice(replaceEnd);
-
-                  return {
-                    ...segment,
-                    text: correctedTx,
-                    correctedHighlight: targetTerm,
-                  };
-                }
-                return segment;
-              });
-            });
-          }
-        }
       },
       onSpeechPlaybackState: () => {
         // The workspace currently keeps the browser speech toggle as the
