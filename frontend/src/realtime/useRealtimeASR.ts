@@ -50,6 +50,8 @@ export interface RealtimeASRState {
 }
 
 export interface RealtimeASROptions {
+  sourceLanguage?: string;
+  targetLanguage?: string;
   onSpeechPlaybackStarted?: (payload: {
     text: string;
     sourceText: string;
@@ -178,6 +180,8 @@ export function useRealtimeASR(
 
     const client = new RealtimeASRClient({
       sessionId: createSessionId(),
+      sourceLanguage: options.sourceLanguage || "zh-CN",
+      targetLanguage: options.targetLanguage || "en-US",
       onTranscript: (transcript) => {
         setSegments((current) => mergeTranscript(current, transcript));
       },

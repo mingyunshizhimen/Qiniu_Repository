@@ -390,6 +390,8 @@ function FlowTranscriptPanel({
 
 function InterpreterPage() {
   const session = useMockInterpreter();
+  const [sourceLang, setSourceLang] = useState<"zh-CN" | "en-US">("zh-CN");
+  const targetLang = sourceLang === "zh-CN" ? "en-US" : "zh-CN";
   const {
     enabled: speechPlaybackEnabled,
     engine: speechPlaybackEngine,
@@ -404,8 +406,10 @@ function InterpreterPage() {
     onSpeechPlaybackAudio,
     onSpeechPlaybackFinished,
     onSpeechPlaybackFailed,
-  } = useSpeechPlayback("en-US");
+  } = useSpeechPlayback(targetLang);
   const realtime = useRealtimeASR({
+    sourceLanguage: sourceLang,
+    targetLanguage: targetLang,
     onSpeechPlaybackStarted,
     onSpeechPlaybackAudio,
     onSpeechPlaybackFinished,
@@ -544,14 +548,17 @@ function InterpreterPage() {
         <div className="language-pair">
           <div>
             <small>SOURCE</small>
-            <strong>中文</strong>
+            <strong>{sourceLang === "zh-CN" ? "中文" : "English"}</strong>
           </div>
-          <span>
+          <span
+            className="language-swap"
+            onClick={() => setSourceLang((s) => (s === "zh-CN" ? "en-US" : "zh-CN"))}
+          >
             <ArrowIcon />
           </span>
           <div>
             <small>TARGET</small>
-            <strong>English</strong>
+            <strong>{targetLang === "zh-CN" ? "中文" : "English"}</strong>
           </div>
         </div>
         <div className="session-meta">

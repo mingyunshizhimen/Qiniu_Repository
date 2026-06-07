@@ -615,6 +615,16 @@ button {
   background: #eef1ff;
 }
 
+.language-swap {
+  cursor: pointer;
+  transition: background 0.2s, transform 0.2s;
+}
+
+.language-swap:hover {
+  background: #dce3ff;
+  transform: scale(1.08);
+}
+
 .language-pair svg {
   width: 17px;
 }
