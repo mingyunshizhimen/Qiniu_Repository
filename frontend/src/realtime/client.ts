@@ -1,6 +1,12 @@
 export type RealtimeSessionState = "idle" | "active" | "paused" | "stopped";
 export type TranscriptStatus = "partial" | "final";
 
+export interface RealtimeTermHit {
+  sourceTerm: string;
+  targetTerm: string;
+  startIndex: number;
+}
+
 export interface RealtimeSocket {
   readonly readyState: number;
   onopen: (() => void) | null;
@@ -29,6 +35,7 @@ interface RealtimeASRClientOptions {
   onTranslation?: (translation: {
     text: string;
     status: TranscriptStatus;
+    termHits: RealtimeTermHit[];
   }) => void;
   onSemanticUnit?: (semanticUnit: {
     text: string;
@@ -286,11 +293,32 @@ export class RealtimeASRClient {
       event.type === "translation.final"
     ) {
       const text = event.payload.text;
+      const termHits = Array.isArray(event.payload.term_hits)
+        ? event.payload.term_hits
+            .map((hit) => {
+              if (
+                !hit ||
+                typeof hit !== "object" ||
+                typeof hit.source_term !== "string" ||
+                typeof hit.target_term !== "string" ||
+                typeof hit.start_index !== "number"
+              ) {
+                return null;
+              }
+              return {
+                sourceTerm: hit.source_term,
+                targetTerm: hit.target_term,
+                startIndex: hit.start_index,
+              } satisfies RealtimeTermHit;
+            })
+            .filter((hit): hit is RealtimeTermHit => hit !== null)
+        : [];
       if (typeof text === "string" && text.trim()) {
         this.options.onTranslation?.({
           text,
           status:
             event.type === "translation.final" ? "final" : "partial",
+          termHits,
         });
       }
       return;
