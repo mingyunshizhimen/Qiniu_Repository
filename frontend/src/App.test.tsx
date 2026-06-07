@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AppRoutes } from "./App";
 
@@ -23,6 +23,11 @@ const { realtimeState } = vi.hoisted(() => ({
       text: string;
       status: "partial" | "final";
     }>,
+    termHits: [] as Array<{
+      sourceTerm: string;
+      targetTerm: string;
+      startIndex: number;
+    }>,
     microphone: {
       status: "idle",
       supported: true,
@@ -37,6 +42,7 @@ const { realtimeState } = vi.hoisted(() => ({
     hasStarted: false,
     start: async () => {},
     stop: async () => {},
+    setSpeechPlaybackEnabled: () => {},
   },
 }));
 
@@ -52,12 +58,21 @@ function renderApp(initialPath = "/") {
   );
 }
 
+beforeEach(() => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() => new Promise(() => {})),
+  );
+});
+
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllGlobals();
   realtimeState.status = "idle";
   realtimeState.segments = [];
   realtimeState.semanticSegments = [];
   realtimeState.translationSegments = [];
+  realtimeState.termHits = [];
   realtimeState.error = null;
   realtimeState.hasStarted = false;
   realtimeState.microphone.status = "idle";
@@ -67,14 +82,14 @@ afterEach(() => {
 });
 
 describe("landing page", () => {
-  it("shows the product message and only the available entry", () => {
+  it("shows the product message and entry point", () => {
     renderApp();
 
     expect(
-      screen.getByRole("heading", { name: /让每一次交流，都自然抵达/ }),
+      screen.getByRole("heading", { name: /让每一次交流，都自然抵达/i }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("link", { name: /进入快速同传/ }),
+      screen.getByRole("link", { name: /进入快速同传/i }),
     ).toBeInTheDocument();
     expect(screen.getByText("实时语音识别")).toBeInTheDocument();
     expect(screen.getByText("语义断句")).toBeInTheDocument();
@@ -86,7 +101,7 @@ describe("landing page", () => {
     const user = userEvent.setup();
     renderApp();
 
-    await user.click(screen.getByRole("link", { name: /进入快速同传/ }));
+    await user.click(screen.getByRole("link", { name: /进入快速同传/i }));
 
     expect(
       screen.getByRole("heading", { name: "实时同传工作台" }),
@@ -96,13 +111,16 @@ describe("landing page", () => {
 });
 
 describe("workspace", () => {
-  it("shows the speech playback switch", () => {
+  it("shows the speech playback switch and glossary region", () => {
     renderApp("/interpreter");
 
     expect(
       screen.getByRole("switch", { name: "语音播报开关" }),
     ).toBeInTheDocument();
     expect(screen.getByText("语音播报")).toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: "glossary workspace" }),
+    ).toBeInTheDocument();
   });
 
   it("keeps subtitles visible when speech playback is toggled on unsupported browsers", async () => {
@@ -127,7 +145,7 @@ describe("workspace", () => {
     expect(screen.getByText("Idle")).toBeInTheDocument();
   });
 
-  it("shows semantic units and translations when the live session is active", () => {
+  it("shows semantic units, translations, and term hits when the live session is active", () => {
     realtimeState.status = "running";
     realtimeState.hasStarted = true;
     realtimeState.semanticSegments = [
@@ -144,12 +162,21 @@ describe("workspace", () => {
         status: "final",
       },
     ];
+    realtimeState.termHits = [
+      {
+        sourceTerm: "Complete semantic unit",
+        targetTerm: "完整语义单元",
+        startIndex: 0,
+      },
+    ];
 
     renderApp("/interpreter");
 
     expect(screen.getByText("Realtime ASR 模式")).toBeInTheDocument();
     expect(screen.getByText("Complete semantic unit.")).toBeInTheDocument();
     expect(screen.getByText("这是一个完整的语义单元。")).toBeInTheDocument();
+    expect(screen.getByText("Current term hits")).toBeInTheDocument();
+    expect(screen.getByText("完整语义单元")).toBeInTheDocument();
   });
 
   it("prompts the user to speak while realtime ASR awaits a semantic unit", () => {
@@ -159,10 +186,10 @@ describe("workspace", () => {
     renderApp("/interpreter");
 
     expect(
-      screen.getByText("连接成功，等待完整语义单元"),
+      screen.getByText("连接成功，等待完整语义单元。"),
     ).toBeInTheDocument();
     expect(
-      screen.getByText("正在等待语义单元后生成译文"),
+      screen.getByText("正在等待语义单元后生成译文。"),
     ).toBeInTheDocument();
   });
 

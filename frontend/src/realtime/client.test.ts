@@ -52,7 +52,7 @@ describe("PCM transport helpers", () => {
 });
 
 describe("RealtimeASRClient", () => {
-  it("forwards transcript, semantic, and translation events", async () => {
+  it("forwards transcript, semantic, translation, and term hit events", async () => {
     const socket = new FakeSocket();
     const onTranscript = vi.fn();
     const onSemanticUnit = vi.fn();
@@ -126,10 +126,17 @@ describe("RealtimeASRClient", () => {
       sequence: 5,
       timestamp: "2026-06-06T00:00:04Z",
       payload: {
-        text: "完整语义单元。",
+        text: "这是一个完整的语义单元。",
         source: "translation",
         provider: "dashscope",
         source_text: "complete semantic unit.",
+        term_hits: [
+          {
+            source_term: "complete semantic unit",
+            target_term: "完整语义单元",
+            start_index: 0,
+          },
+        ],
       },
     });
 
@@ -146,8 +153,15 @@ describe("RealtimeASRClient", () => {
       status: "final",
     });
     expect(onTranslation).toHaveBeenNthCalledWith(1, {
-      text: "完整语义单元。",
+      text: "这是一个完整的语义单元。",
       status: "final",
+      termHits: [
+        {
+          sourceTerm: "complete semantic unit",
+          targetTerm: "完整语义单元",
+          startIndex: 0,
+        },
+      ],
     });
 
     client.stop();

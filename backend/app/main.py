@@ -2,6 +2,7 @@ import logging
 
 from fastapi import FastAPI
 
+from backend.app.api.glossary import router as glossary_router
 from backend.app.api.health import router as health_router
 from backend.app.api.realtime import router as realtime_router
 from backend.app.core.config import get_settings
@@ -26,5 +27,6 @@ app = FastAPI(
     title="Qiniu AI Interpreter API",
     version=settings.app_version,
 )
+app.include_router(glossary_router, prefix="/api/v1")
 app.include_router(health_router, prefix="/api/v1")
 app.include_router(realtime_router, prefix="/api/v1")

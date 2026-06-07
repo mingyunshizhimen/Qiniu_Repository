@@ -6,6 +6,7 @@ import {
 } from "../audio/useMicrophoneCapture";
 import {
   RealtimeASRClient,
+  type RealtimeTermHit,
   type RealtimeSessionState,
   type TranscriptStatus,
 } from "./client";
@@ -29,6 +30,7 @@ export interface RealtimeASRState {
   segments: RealtimeTranscriptSegment[];
   semanticSegments: RealtimeTranscriptSegment[];
   translationSegments: RealtimeTranscriptSegment[];
+  termHits: RealtimeTermHit[];
   microphone: MicrophoneCaptureState;
   error: string | null;
   hasStarted: boolean;
@@ -114,6 +116,7 @@ export function useRealtimeASR(
   const [translationSegments, setTranslationSegments] = useState<
     RealtimeTranscriptSegment[]
   >([]);
+  const [termHits, setTermHits] = useState<RealtimeTermHit[]>([]);
   const [error, setError] = useState<string | null>(null);
   const speechPlaybackEnabledRef = useRef(false);
 
@@ -146,6 +149,7 @@ export function useRealtimeASR(
     setSegments([]);
     setSemanticSegments([]);
     setTranslationSegments([]);
+    setTermHits([]);
     setError(null);
     setStatus("connecting");
 
@@ -161,6 +165,9 @@ export function useRealtimeASR(
         setTranslationSegments((current) =>
           mergeTranscript(current, translation),
         );
+        if (translation.status === "final") {
+          setTermHits(translation.termHits);
+        }
       },
       onSessionState: handleSessionState,
       onSpeechPlaybackStarted: options.onSpeechPlaybackStarted,
@@ -243,6 +250,7 @@ export function useRealtimeASR(
     segments,
     semanticSegments,
     translationSegments,
+    termHits,
     microphone,
     error,
     hasStarted: status !== "idle",

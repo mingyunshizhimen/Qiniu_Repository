@@ -2,9 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, Route, Routes } from "react-router-dom";
 
 import { MicrophoneCapturePanel } from "./components/MicrophoneCapturePanel";
+import { GlossaryPanel } from "./components/GlossaryPanel";
 import { useRealtimeASR } from "./realtime/useRealtimeASR";
-import { type SpeechPlaybackStatus, useSpeechPlayback } from "./realtime/useSpeechPlayback";
-
+import {
+  type SpeechPlaybackStatus,
+  useSpeechPlayback,
+} from "./realtime/useSpeechPlayback";
 
 export interface SubtitleSegment {
   id: string;
@@ -67,7 +70,6 @@ const capabilities = [
   },
 ];
 
-
 function BrandMark() {
   return (
     <span className="brand-mark" aria-hidden="true">
@@ -78,7 +80,6 @@ function BrandMark() {
   );
 }
 
-
 function ArrowIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -86,7 +87,6 @@ function ArrowIcon() {
     </svg>
   );
 }
-
 
 function AudioWave({ compact = false }: { compact?: boolean }) {
   return (
@@ -97,7 +97,6 @@ function AudioWave({ compact = false }: { compact?: boolean }) {
     </span>
   );
 }
-
 
 function LandingPage() {
   return (
@@ -129,11 +128,7 @@ function LandingPage() {
             用一条稳定的智能管线，让专业表达跨越语言边界。
           </p>
           <div className="hero-actions">
-            <Link
-              className="primary-action"
-              to="/interpreter"
-              aria-label="进入快速同传"
-            >
+            <Link className="primary-action" to="/interpreter" aria-label="进入快速同传">
               进入快速同传
               <ArrowIcon />
             </Link>
@@ -167,7 +162,7 @@ function LandingPage() {
               </div>
               <div className="preview-line source">
                 <small>原文</small>
-                <p>好的想法，值得被每个人听见。</p>
+                <p>好的想法，值得被每一个人听见。</p>
               </div>
               <div className="preview-divider">
                 <AudioWave compact />
@@ -211,7 +206,6 @@ function LandingPage() {
     </main>
   );
 }
-
 
 function useMockInterpreter() {
   const [status, setStatus] = useState<SessionStatus>("idle");
@@ -259,106 +253,6 @@ function useMockInterpreter() {
     stop: () => setStatus("ended"),
   };
 }
-
-
-const statusLabels: Record<SessionStatus, string> = {
-  idle: "待开始",
-  running: "运行中",
-  paused: "已暂停",
-  ended: "已结束",
-};
-
-
-function TranscriptPanel({
-  title,
-  language,
-  segments,
-  translated,
-  emptyMessage,
-}: {
-  title: string;
-  language: string;
-  segments: SubtitleSegment[];
-  translated?: boolean;
-  emptyMessage?: string;
-}) {
-  const contentRef = useRef<HTMLDivElement | null>(null);
-  const [followLatest, setFollowLatest] = useState(true);
-
-  useEffect(() => {
-    if (!followLatest || !contentRef.current) {
-      return;
-    }
-
-    contentRef.current.scrollTop = contentRef.current.scrollHeight;
-  }, [followLatest, segments]);
-
-  const handleScroll = () => {
-    const element = contentRef.current;
-    if (!element) {
-      return;
-    }
-
-    const distanceFromBottom =
-      element.scrollHeight - element.scrollTop - element.clientHeight;
-    setFollowLatest(distanceFromBottom < 24);
-  };
-
-  return (
-    <section className="transcript-panel">
-      <header>
-        <div>
-          <small>{title}</small>
-          <strong>{language}</strong>
-        </div>
-        <div className="transcript-panel-header-tools">
-          {!translated && <AudioWave compact />}
-          <span className={followLatest ? "follow-badge active" : "follow-badge"}>
-            {followLatest ? "跟随最新" : "手动浏览"}
-          </span>
-        </div>
-      </header>
-      <div
-        ref={contentRef}
-        className="transcript-content"
-        aria-live="polite"
-        onScroll={handleScroll}
-      >
-        {segments.length === 0 ? (
-          <div className="empty-transcript">
-            <span>{translated ? "TR" : "CN"}</span>
-            <p>
-              {emptyMessage ??
-                (translated
-                  ? "译文将在这里同步呈现"
-                  : "点击开始，查看模拟字幕流")}
-            </p>
-          </div>
-        ) : (
-          segments.map((segment) => (
-            <article
-              className={`transcript-segment ${segment.status}`}
-              key={segment.id}
-            >
-              <p>
-                {translated
-                  ? segment.translatedText || "等待确认原文后生成译文"
-                  : segment.sourceText}
-              </p>
-              {!translated && (
-                <span>
-                  <i />
-                  {segment.status === "partial" ? "正在识别" : "已确认"}
-                </span>
-              )}
-            </article>
-          ))
-        )}
-      </div>
-    </section>
-  );
-}
-
 
 function FlowTranscriptPanel({
   title,
@@ -434,8 +328,7 @@ function FlowTranscriptPanel({
               >
                 <span className="transcript-flow-text">
                   {translated
-                    ? segment.translatedText ||
-                      "等待确认原文后生成译文"
+                    ? segment.translatedText || "等待确认原文后生成译文"
                     : segment.sourceText}
                 </span>
                 {!translated && (
@@ -458,7 +351,6 @@ function FlowTranscriptPanel({
   );
 }
 
-
 function InterpreterPage() {
   const session = useMockInterpreter();
   const {
@@ -479,6 +371,7 @@ function InterpreterPage() {
     onSpeechPlaybackFinished,
     onSpeechPlaybackFailed,
   });
+
   const realtimeActive =
     realtime.status === "connecting" ||
     realtime.status === "running" ||
@@ -488,6 +381,7 @@ function InterpreterPage() {
     realtime.segments.length > 0 ||
     realtime.semanticSegments.length > 0 ||
     realtime.translationSegments.length > 0;
+
   const displayedSourceSegments =
     realtime.semanticSegments.length > 0
       ? realtime.semanticSegments.map((segment) => ({
@@ -504,6 +398,7 @@ function InterpreterPage() {
             status: segment.status,
           }))
         : session.segments;
+
   const displayedTranslationSegments = showRealtime
     ? realtime.translationSegments.map((segment) => ({
         id: segment.id,
@@ -512,6 +407,7 @@ function InterpreterPage() {
         status: segment.status,
       }))
     : session.segments;
+
   const displayedStatus: SessionStatus = realtimeActive
     ? "running"
     : realtime.status === "ended" || realtime.status === "error"
@@ -523,7 +419,6 @@ function InterpreterPage() {
     if (showRealtime) {
       return;
     }
-
     clearSpeechPlayback();
   }, [clearSpeechPlayback, showRealtime]);
 
@@ -620,9 +515,7 @@ function InterpreterPage() {
           <button
             aria-checked={speechPlaybackEnabled}
             aria-label="语音播报开关"
-            className={
-              speechPlaybackEnabled ? "speech-switch active" : "speech-switch"
-            }
+            className={speechPlaybackEnabled ? "speech-switch active" : "speech-switch"}
             role="switch"
             type="button"
             onClick={() => setSpeechPlaybackEnabled(!speechPlaybackEnabled)}
@@ -637,20 +530,18 @@ function InterpreterPage() {
           title="SOURCE TRANSCRIPT"
           language="原文字幕"
           segments={displayedSourceSegments}
-          emptyMessage={
-            showRealtime ? "连接成功，等待完整语义单元。" : undefined
-          }
+          emptyMessage={showRealtime ? "连接成功，等待完整语义单元。" : undefined}
         />
         <FlowTranscriptPanel
           title="LIVE TRANSLATION"
           language="译文字幕"
           segments={displayedTranslationSegments}
           translated
-          emptyMessage={
-            showRealtime ? "正在等待语义单元后生成译文。" : undefined
-          }
+          emptyMessage={showRealtime ? "正在等待语义单元后生成译文。" : undefined}
         />
       </section>
+
+      <GlossaryPanel termHits={realtime.termHits} />
 
       <section className="control-dock" aria-label="演示控制">
         <div className="dock-message">
@@ -708,11 +599,12 @@ function InterpreterPage() {
       />
 
       <p className="workspace-footnote">
-        Realtime ASR 需要后端服务和 DASHSCOPE_API_KEY，Mock 演示仍可独立运行。
+        Realtime ASR 需要后端服务和 DASHSCOPE_API_KEY；Mock 演示仍可独立运行。
       </p>
     </main>
   );
 }
+
 export function AppRoutes() {
   return (
     <Routes>
