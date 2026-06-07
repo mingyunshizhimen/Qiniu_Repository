@@ -126,14 +126,14 @@ describe("RealtimeASRClient", () => {
       sequence: 5,
       timestamp: "2026-06-06T00:00:04Z",
       payload: {
-        text: "这是一个完整的语义单元。",
+        text: "this is a complete semantic unit.",
         source: "translation",
         provider: "dashscope",
         source_text: "complete semantic unit.",
         term_hits: [
           {
             source_term: "complete semantic unit",
-            target_term: "完整语义单元",
+            target_term: "complete semantic unit",
             start_index: 0,
           },
         ],
@@ -153,12 +153,12 @@ describe("RealtimeASRClient", () => {
       status: "final",
     });
     expect(onTranslation).toHaveBeenNthCalledWith(1, {
-      text: "这是一个完整的语义单元。",
+      text: "this is a complete semantic unit.",
       status: "final",
       termHits: [
         {
           sourceTerm: "complete semantic unit",
-          targetTerm: "完整语义单元",
+          targetTerm: "complete semantic unit",
           startIndex: 0,
         },
       ],
@@ -235,7 +235,7 @@ describe("RealtimeASRClient", () => {
       trace_id: "playback-trace",
       sequence: 2,
       timestamp: "2026-06-06T00:00:01Z",
-      payload: { text: "hello", source_text: "你好" },
+      payload: { text: "hello", source_text: "hello" },
     });
     socket.receive({
       version: "1.0",
@@ -246,7 +246,7 @@ describe("RealtimeASRClient", () => {
       timestamp: "2026-06-06T00:00:02Z",
       payload: {
         text: "hello",
-        source_text: "你好",
+        source_text: "hello",
         audio: "AQID",
         format: "pcm",
         sample_rate: 24000,
@@ -261,16 +261,16 @@ describe("RealtimeASRClient", () => {
       trace_id: "playback-trace",
       sequence: 4,
       timestamp: "2026-06-06T00:00:03Z",
-      payload: { text: "hello", source_text: "你好", provider: "dashscope" },
+      payload: { text: "hello", source_text: "hello", provider: "dashscope" },
     });
 
     expect(onSpeechPlaybackStarted).toHaveBeenCalledWith({
       text: "hello",
-      sourceText: "你好",
+      sourceText: "hello",
     });
     expect(onSpeechPlaybackAudio).toHaveBeenCalledWith({
       text: "hello",
-      sourceText: "你好",
+      sourceText: "hello",
       audio: "AQID",
       format: "pcm",
       sampleRate: 24000,
@@ -279,7 +279,7 @@ describe("RealtimeASRClient", () => {
     });
     expect(onSpeechPlaybackFinished).toHaveBeenCalledWith({
       text: "hello",
-      sourceText: "你好",
+      sourceText: "hello",
       provider: "dashscope",
       chunks: undefined,
     });

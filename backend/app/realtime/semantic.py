@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 
 
-_TERMINAL_PUNCTUATION = "。！？!?"
+_TERMINAL_PUNCTUATION = "。！？!?."
 _SOFT_BOUNDARY_PUNCTUATION = "，,；;：:"
 
 
