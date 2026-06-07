@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import uuid
 from dataclasses import dataclass
+from functools import lru_cache
 
 logger = logging.getLogger(__name__)
 
@@ -99,3 +100,9 @@ class GlossaryService:
         term_count = len(self._terms)
         self._terms.clear()
         logger.info("Cleared %s glossary terms", term_count)
+
+
+@lru_cache
+def get_glossary_service() -> GlossaryService:
+    """Return the shared in-memory glossary service instance."""
+    return GlossaryService()
