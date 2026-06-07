@@ -11,6 +11,7 @@ from backend.app.providers.base import (
     ASRAudioChunk,
     ASRProvider,
     ASRResult,
+    GlossaryConstraint,
     TranslationProvider,
     TranslationRequest,
     TranslationResult,
@@ -20,6 +21,7 @@ from backend.app.providers.base import (
 from backend.app.realtime.models import ClientCommand, ServerEvent
 from backend.app.realtime.semantic import SemanticSegmenter
 from backend.app.realtime.session import RealtimeSession
+from backend.app.services.glossary import GlossaryService, get_glossary_service
 
 logger = logging.getLogger(__name__)
 
@@ -32,12 +34,14 @@ class RealtimeASRPipeline:
         translation_provider: TranslationProvider,
         tts_provider: TTSProvider,
         event_sink: Callable[[ServerEvent], Awaitable[None]] | None = None,
+        glossary_service: GlossaryService | None = None,
     ) -> None:
         self._session = session
         self._provider = provider
         self._translation_provider = translation_provider
         self._tts_provider = tts_provider
         self._event_sink = event_sink
+        self._glossary_service = glossary_service or get_glossary_service()
         self._provider_initialized = False
         self._provider_finalized = False
         self._source_language = "zh-CN"
@@ -298,6 +302,15 @@ class RealtimeASRPipeline:
         semantic_event: ServerEvent,
         text: str,
     ) -> ServerEvent | None:
+        glossary_matches = self._glossary_service.match_terms(text)
+        glossary_constraints = [
+            GlossaryConstraint(
+                source_term=term.source_term,
+                target_term=term.target_term,
+                start_index=start_index,
+            )
+            for term, start_index in glossary_matches
+        ]
         try:
             result: TranslationResult = await self._translation_provider.translate(
                 TranslationRequest(
@@ -305,6 +318,7 @@ class RealtimeASRPipeline:
                     source_language=self._source_language,
                     target_language=self._target_language,
                     context=self._confirmed_transcripts[-5:],
+                    glossary_terms=glossary_constraints,
                 )
             )
         except Exception as exc:
@@ -322,6 +336,14 @@ class RealtimeASRPipeline:
                 "source": "translation",
                 "provider": result.provider,
                 "source_text": result.source_text,
+                "term_hits": [
+                    {
+                        "source_term": constraint.source_term,
+                        "target_term": constraint.target_term,
+                        "start_index": constraint.start_index,
+                    }
+                    for constraint in glossary_constraints
+                ],
             },
         )
 
