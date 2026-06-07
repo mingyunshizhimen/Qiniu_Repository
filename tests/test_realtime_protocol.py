@@ -186,6 +186,7 @@ def test_audio_pipeline_emits_semantic_unit_and_translation_after_final_transcri
             source_language="en-US",
             target_language="zh-CN",
             context=[],
+            glossary_terms=[],
         )
     ]
 
