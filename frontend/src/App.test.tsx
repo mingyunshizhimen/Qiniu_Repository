@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+﻿import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -122,6 +122,9 @@ describe("workspace", () => {
       screen.getByRole("region", { name: "glossary summary" }),
     ).toBeInTheDocument();
     expect(
+      screen.getByRole("combobox", { name: "播报引擎" }),
+    ).toBeInTheDocument();
+    expect(
       screen.getByRole("link", { name: "Open glossary workspace" }),
     ).toBeInTheDocument();
   });
@@ -233,3 +236,4 @@ describe("workspace", () => {
     expect(screen.getByText("已确认")).toBeInTheDocument();
   });
 });
+

@@ -132,6 +132,7 @@ describe("useSpeechPlayback", () => {
     const { result } = renderHook(() => useSpeechPlayback("en-US"));
 
     act(() => {
+      result.current.setEngine("backend");
       result.current.setEnabled(true);
     });
 
@@ -166,6 +167,7 @@ describe("useSpeechPlayback", () => {
     const { result } = renderHook(() => useSpeechPlayback("en-US"));
 
     act(() => {
+      result.current.setEngine("backend");
       result.current.setEnabled(true);
     });
 
@@ -193,6 +195,7 @@ describe("useSpeechPlayback", () => {
     const { result } = renderHook(() => useSpeechPlayback("en-US"));
 
     act(() => {
+      result.current.setEngine("backend");
       result.current.setEnabled(true);
     });
 
@@ -208,5 +211,30 @@ describe("useSpeechPlayback", () => {
     });
 
     expect(speakMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores backend playback events while browser engine is selected", async () => {
+    const { result } = renderHook(() => useSpeechPlayback("en-US"));
+
+    act(() => {
+      result.current.setEnabled(true);
+    });
+
+    act(() => {
+      result.current.onSpeechPlaybackStarted({
+        text: "Backend text",
+        sourceText: "Backend text",
+      });
+      result.current.onSpeechPlaybackFinished({
+        text: "Backend text",
+        sourceText: "Backend text",
+        provider: "dashscope",
+        chunks: 0,
+      });
+    });
+
+    await waitFor(() => {
+      expect(speakMock).not.toHaveBeenCalled();
+    });
   });
 });
