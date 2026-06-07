@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, Route, Routes } from "react-router-dom";
 
 import { MicrophoneCapturePanel } from "./components/MicrophoneCapturePanel";
@@ -16,6 +16,8 @@ export interface SubtitleSegment {
   sourceText: string;
   translatedText: string;
   status: "partial" | "final";
+  /** 纠错高亮文字：如果此 segment 被纠错过，存储纠正后的文字用于渲染高亮 */
+  correctedHighlight?: string;
 }
 
 type SessionStatus = "idle" | "running" | "paused" | "ended";
@@ -273,13 +275,36 @@ function FlowTranscriptPanel({
   const [followLatest, setFollowLatest] = useState(true);
   const liveTail = segments.at(-1)?.status === "partial" ? segments.at(-1) : null;
   const confirmedSegments = liveTail ? segments.slice(0, -1) : segments;
-  const bodyText = confirmedSegments
-    .map((segment) =>
-      translated
-        ? segment.translatedText || "等待确认原文后生成译文"
-        : segment.sourceText,
-    )
-    .join("");
+
+  // 渲染 segment 文本，如果有 correctedHighlight 则高亮显示
+  const renderSegmentText = (segment: SubtitleSegment) => {
+    const text = translated
+      ? segment.translatedText || "等待确认原文后生成译文"
+      : segment.sourceText;
+
+    if (segment.correctedHighlight && text.includes(segment.correctedHighlight)) {
+      // 将文本拆分为：[前缀, 高亮部分, 后缀]
+      const highlight = segment.correctedHighlight;
+      const idx = text.indexOf(highlight);
+      if (idx >= 0) {
+        return (
+          <>
+            {text.slice(0, idx)}
+            <span className="correction-text-highlight" key={`hl-${segment.id}`}>
+              {highlight}
+            </span>
+            {text.slice(idx + highlight.length)}
+          </>
+        );
+      }
+    }
+    return text;
+  };
+
+  const bodyContent = confirmedSegments.map((segment, i) => (
+    <span key={segment.id || i}>{renderSegmentText(segment)}</span>
+  ));
+
   const liveTailText = liveTail
     ? translated
       ? liveTail.translatedText || "等待确认原文后生成译文"
@@ -342,7 +367,7 @@ function FlowTranscriptPanel({
           </div>
         ) : (
           <p className="transcript-flow-paragraph">
-            {bodyText && <span className="transcript-flow-body">{bodyText}</span>}
+            {bodyContent && <span className="transcript-flow-body">{bodyContent}</span>}
             {liveTail && (
               <span
                 className={
@@ -402,6 +427,7 @@ function InterpreterPage() {
           sourceText: segment.text,
           translatedText: "",
           status: segment.status,
+          correctedHighlight: segment.correctedHighlight,
         }))
       : session.segments;
 
@@ -411,6 +437,7 @@ function InterpreterPage() {
         sourceText: "",
         translatedText: segment.text,
         status: segment.status,
+        correctedHighlight: segment.correctedHighlight,
       }))
     : session.segments;
 
@@ -608,7 +635,7 @@ function InterpreterPage() {
         />
       </section>
 
-      <GlossarySummaryPanel termHits={realtime.termHits} />
+      <GlossarySummaryPanel termHits={realtime.termHits} corrections={realtime.corrections} />
 
       <section className="control-dock" aria-label="演示控制">
         <div className="dock-message">
