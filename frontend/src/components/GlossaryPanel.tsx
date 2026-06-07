@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
+import { defaultApiBaseUrl } from "../lib/api";
+
 export interface GlossaryHit {
   sourceTerm: string;
   targetTerm: string;
@@ -17,6 +19,8 @@ interface GlossaryTermRecord {
 interface GlossaryPanelProps {
   termHits: GlossaryHit[];
 }
+
+const glossaryApiBaseUrl = `${defaultApiBaseUrl()}/api/v1/glossary/terms`;
 
 export function GlossaryPanel({ termHits }: GlossaryPanelProps) {
   const [terms, setTerms] = useState<GlossaryTermRecord[]>([]);
@@ -40,7 +44,7 @@ export function GlossaryPanel({ termHits }: GlossaryPanelProps) {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch("/api/v1/glossary/terms");
+      const response = await fetch(glossaryApiBaseUrl);
       if (!response.ok) {
         throw new Error("Failed to load glossary terms.");
       }
@@ -66,7 +70,7 @@ export function GlossaryPanel({ termHits }: GlossaryPanelProps) {
     setSubmitting(true);
     setError(null);
     try {
-      const response = await fetch("/api/v1/glossary/terms", {
+      const response = await fetch(glossaryApiBaseUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -99,7 +103,7 @@ export function GlossaryPanel({ termHits }: GlossaryPanelProps) {
   async function handleToggleTerm(term: GlossaryTermRecord) {
     setError(null);
     try {
-      const response = await fetch(`/api/v1/glossary/terms/${term.id}`, {
+      const response = await fetch(`${glossaryApiBaseUrl}/${term.id}`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -127,7 +131,7 @@ export function GlossaryPanel({ termHits }: GlossaryPanelProps) {
   async function handleDeleteTerm(term: GlossaryTermRecord) {
     setError(null);
     try {
-      const response = await fetch(`/api/v1/glossary/terms/${term.id}`, {
+      const response = await fetch(`${glossaryApiBaseUrl}/${term.id}`, {
         method: "DELETE",
       });
       if (!response.ok) {

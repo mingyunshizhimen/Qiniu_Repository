@@ -111,7 +111,7 @@ describe("landing page", () => {
 });
 
 describe("workspace", () => {
-  it("shows the speech playback switch and glossary region", () => {
+  it("shows the speech playback switch and glossary summary entry", () => {
     renderApp("/interpreter");
 
     expect(
@@ -119,7 +119,10 @@ describe("workspace", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("语音播报")).toBeInTheDocument();
     expect(
-      screen.getByRole("region", { name: "glossary workspace" }),
+      screen.getByRole("region", { name: "glossary summary" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Open glossary workspace" }),
     ).toBeInTheDocument();
   });
 
@@ -175,7 +178,9 @@ describe("workspace", () => {
     expect(screen.getByText("Realtime ASR 模式")).toBeInTheDocument();
     expect(screen.getByText("Complete semantic unit.")).toBeInTheDocument();
     expect(screen.getByText("这是一个完整的语义单元。")).toBeInTheDocument();
-    expect(screen.getByText("Current term hits")).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Open glossary workspace" }),
+    ).toBeInTheDocument();
     expect(screen.getByText("完整语义单元")).toBeInTheDocument();
   });
 

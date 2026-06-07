@@ -89,7 +89,7 @@ describe("GlossaryPanel", () => {
     expect(await screen.findByText("Object Storage")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
-      "/api/v1/glossary/terms",
+      expect.stringContaining("/api/v1/glossary/terms"),
       expect.objectContaining({
         method: "POST",
       }),
@@ -100,7 +100,7 @@ describe("GlossaryPanel", () => {
     await waitFor(() => {
       expect(fetchMock).toHaveBeenNthCalledWith(
         3,
-        "/api/v1/glossary/terms/term-1",
+        expect.stringContaining("/api/v1/glossary/terms/term-1"),
         expect.objectContaining({
           method: "PATCH",
         }),
@@ -112,7 +112,7 @@ describe("GlossaryPanel", () => {
     await waitFor(() => {
       expect(fetchMock).toHaveBeenNthCalledWith(
         4,
-        "/api/v1/glossary/terms/term-1",
+        expect.stringContaining("/api/v1/glossary/terms/term-1"),
         expect.objectContaining({
           method: "DELETE",
         }),
